@@ -44,17 +44,19 @@ class LeggedEnv:
         self.scene = gs.Scene(
             sim_options=gs.options.SimOptions(
                 dt=sim_dt,
+                # dt=self.dt,
                 substeps=sim_substeps,
             ),
             viewer_options=gs.options.ViewerOptions(
                 max_FPS=int(1 / self.dt * self.env_cfg['decimation']),
+                # max_FPS=int(1 / self.dt),
                 camera_pos=(2.0, 0.0, 2.5),
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=40,
             ),
             vis_options=gs.options.VisOptions(n_rendered_envs=1),
             rigid_options=gs.options.RigidOptions(
-                dt=self.dt,
+                dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
                 enable_collision=True,
                 enable_self_collision=True,
@@ -69,12 +71,22 @@ class LeggedEnv:
 
         self.show_vis = show_viewer
         self.selected_robot = 0
-        self.cam_0 = self.scene.add_camera(
-            # res=(640, 480),
-            pos=(5.0, 0.0, 2.5),
-            lookat=(0, 0, 0.5),
-            fov=30,
-            GUI=show_viewer        )
+        if show_viewer:
+            self.cam_0 = self.scene.add_camera(
+                res=(640, 480),
+                pos=(5.0, 0.0, 2.5),
+                lookat=(0, 0, 0.5),
+                fov=30,
+                GUI=show_viewer        
+            )
+        else:
+            self.cam_0 = self.scene.add_camera(
+                # res=(640, 480),
+                pos=(5.0, 0.0, 2.5),
+                lookat=(0, 0, 0.5),
+                fov=30,
+                GUI=show_viewer        
+            )
         self._recording = False
         self._recorded_frames = []
 
@@ -156,7 +168,7 @@ class LeggedEnv:
 
         # names to indices
         self.motor_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.env_cfg["dof_names"]]
-        self.hip_dofs = [self.robot.get_joint(str(name +"_joint")).dof_idx_local for name in self.env_cfg["hip_names"]]
+        self.hip_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.env_cfg["hip_joint_names"]]
 
         def find_link_indices(names):
             link_indices = list()
@@ -223,8 +235,10 @@ class LeggedEnv:
         self.reward_functions, self.episode_sums = dict(), dict()
         for name in self.reward_scales.keys():
             self.reward_scales[name] *= self.dt
-            self.reward_functions[name] = getattr(self, "_reward_" + name)
             self.episode_sums[name] = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
+            if name=="termination":
+                continue
+            self.reward_functions[name] = getattr(self, "_reward_" + name)
 
         # initialize buffers
 
@@ -246,6 +260,7 @@ class LeggedEnv:
         self.rew_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         self.reset_buf = torch.ones((self.num_envs,), device=self.device, dtype=gs.tc_int)
         self.episode_length_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_int)
+        self.time_out_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_int)
         self.commands = torch.zeros((self.num_envs, self.num_commands), device=self.device, dtype=gs.tc_float)
         self.commands_scale = torch.tensor(
             [self.obs_scales["lin_vel"], self.obs_scales["lin_vel"], self.obs_scales["ang_vel"]],
@@ -293,7 +308,7 @@ class LeggedEnv:
             [
                 self.env_cfg["default_joint_angles"][name]
                 for name in self.env_cfg["dof_names"]
-                if name.startswith("R") and name.endswith("_hip_joint")
+                if name in self.env_cfg["hip_joint_names"]
             ],
             device=self.device,
             dtype=gs.tc_float,
@@ -546,7 +561,6 @@ class LeggedEnv:
         #     raise ValueError("NaNs in DOF states after scene step.")
 
 
-        self._render_headless()
 
         # update buffers
         self.episode_length_buf += 1
@@ -700,6 +714,10 @@ class LeggedEnv:
             rew = reward_func() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
+        if "termination" in self.reward_scales:
+            rew = self._reward_termination() * self.reward_scales["termination"]
+            self.rew_buf += rew
+            self.episode_sums["termination"] += rew
 
     def get_observations(self):
         return self.obs_buf
@@ -791,14 +809,6 @@ class LeggedEnv:
         else:
             self.base_pos[envs_idx] = self.random_pos[0] + self.base_init_pos
 
-        # if self.show_vis:
-        #     # Convert to CPU NumPy array
-        #     envs_idx_cpu = envs_idx.cpu().numpy()
-        #     if self.selected_robot in envs_idx_cpu:
-        #         # Randomly select a number
-        #         self.selected_robot = random.choice(envs_idx_cpu)
-        #         # print(f"Random Number: {random_number}")
-
         self.base_quat[envs_idx] = self.base_init_quat.reshape(1, -1)
         self.robot.set_pos(self.base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
         self.robot.set_quat(self.base_quat[envs_idx], zero_velocity=False, envs_idx=envs_idx)
@@ -839,7 +849,8 @@ class LeggedEnv:
             )
             self.episode_sums[key][envs_idx] = 0.0
         self._resample_commands(envs_idx)
-
+        if self.env_cfg['send_timeouts']:
+            self.extras['time_outs'] = self.time_out_buf
 
     def generate_random_positions(self):
         """
@@ -907,25 +918,20 @@ class LeggedEnv:
 
     def _render_headless(self):
         if self._recording and len(self._recorded_frames) < 150:
-            # robot_pos = np.array(self.base_pos[0].cpu())
-            # self._floating_camera.set_pose(pos=robot_pos + np.array([-1, -1, 0.5]), lookat=robot_pos + np.array([0, 0, -0.1]))
-            # # import time
-            # # start = time.time()
-            x, y, z = self.base_pos[self.selected_robot].cpu().numpy()  # Convert the tensor to NumPy
+            x, y, z = self.base_pos[0].cpu().numpy()  # Convert the tensor to NumPy
             self.cam_0.set_pose(pos=(x+5.0, y, z+5.5), lookat=(x, y, z+0.5))
             if self.show_vis:
                 self.cam_0.render(
                     rgb=True,
                 )
             frame, _, _, _ = self.cam_0.render()
-            # end = time.time()
-            # print(end-start)
             self._recorded_frames.append(frame)
-            # from PIL import Image
-            # img = Image.fromarray(np.uint8(frame))
-            # img.save('./test.png')
-            # print('save')
-
+        elif self.show_vis:
+            x, y, z = self.base_pos[0].cpu().numpy()  # Convert the tensor to NumPy
+            self.cam_0.set_pose(pos=(x+5.0, y, z+5.5), lookat=(x, y, z+0.5))
+            self.cam_0.render(
+                rgb=True,
+            )
     def get_recorded_frames(self):
         if len(self._recorded_frames) == 150:
             frames = self._recorded_frames
