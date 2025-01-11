@@ -9,6 +9,8 @@ from rsl_rl.runners import OnPolicyRunner
 import genesis as gs
 from datetime import datetime
 import re
+import wandb
+
 def get_train_cfg(exp_name, max_iterations):
 
     train_cfg_dict = {
@@ -42,7 +44,7 @@ def get_train_cfg(exp_name, max_iterations):
             "max_iterations": max_iterations,
             "num_steps_per_env": 24,
             "policy_class_name": "ActorCritic",
-            "record_interval": -1,
+            "record_interval": 50,
             "resume": False,
             "resume_path": None,
             "run_name": "",
@@ -92,23 +94,23 @@ def get_cfgs():
             "RR_thigh_joint",
             "RR_calf_joint",
         ],
-        'PD_stiffness': {'hip': 20.0,
+        'PD_stiffness': {'hip':   20,
                          'thigh': 20,
                           'calf': 20},
-        'PD_damping': {'hip': 0.5,
+        'PD_damping': {'hip':    0.5,
                         'thigh': 0.5,
-                        'calf': 0.5},
+                        'calf':  0.5},
 
         # termination
         'termination_contact_link_names': ['base'],
         'penalized_contact_link_names': ['base', 'thigh', 'calf'],
         'feet_link_names': ['foot'],
         'base_link_name': ['base'], 
-        "hip_names": [
-            "FL_hip",
-            "FR_hip",
-            "RL_hip",
-            "RR_hip",            
+        "hip_joint_names": [
+            # "FL_hip_joint",
+            # "FR_hip_joint",
+            "RL_hip_joint",
+            "RR_hip_joint",            
         ],
         "termination_if_roll_greater_than": 170,  # degree. 
         "termination_if_pitch_greater_than": 170,
@@ -120,7 +122,7 @@ def get_cfgs():
         "episode_length_s": 20.0,
         "resampling_time_s": 4.0,
         "action_scale": 0.25,
-        "simulate_action_latency": False,
+        "simulate_action_latency": True,
         "clip_actions": 100.0,
         'control_freq': 50,
         'decimation': 4,
@@ -132,7 +134,7 @@ def get_cfgs():
         'friction_range': [0.1, 1.5],
         'randomize_base_mass': True,
         'added_mass_range': [-1., 3.],
-        'randomize_com_displacement': False,
+        'randomize_com_displacement': True,
         'com_displacement_range': [-0.01, 0.01],
         'randomize_motor_strength': False,
         'motor_strength_range': [0.9, 1.1],
@@ -180,6 +182,7 @@ def get_cfgs():
             "dof_pos_limits": -10.0,
             'torques': -0.00002,
             "termination": -30.0,
+            "feet_air_time": -1.0
             # "front_feet_swing_height": -10.0, #-10.0
             # "rear_feet_swing_height": -0.1, #-10.0
         },
@@ -187,8 +190,8 @@ def get_cfgs():
     command_cfg = {
         "num_commands": 3,
         "lin_vel_x_range": [-1.0, 1.0],
-        "lin_vel_y_range": [-0.8, 0.8],
-        "ang_vel_range": [-1.0, 1.0],
+        "lin_vel_y_range": [-0.5, 0.5],
+        "ang_vel_range": [-0.5, 0.5],
     }
     noise_cfg = {
         "add_noise": True,
@@ -226,11 +229,12 @@ def get_cfgs():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="go1_walking")
-    parser.add_argument("-B", "--num_envs", type=int, default=4096)
-    parser.add_argument("--max_iterations", type=int, default=500)
+    parser.add_argument("-B", "--num_envs", type=int, default=10000)
+    parser.add_argument("--max_iterations", type=int, default=1000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
-    parser.add_argument("--view", type=bool, default=False)
+    parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
+    parser.add_argument("--offline", action="store_true", help="If you do not want to upload online via wandb")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
@@ -278,6 +282,9 @@ def main():
     runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda:0")
     if args.resume:
         runner.load(resume_path)
+
+
+    wandb.init(project='custom_genesis', name=args.exp_name, dir=log_dir, mode='offline' if args.offline else 'online')
 
     pickle.dump(
         [env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, train_cfg, terrain_cfg],
