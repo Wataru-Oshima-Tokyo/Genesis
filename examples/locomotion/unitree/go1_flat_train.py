@@ -61,7 +61,7 @@ def get_train_cfg(exp_name, max_iterations):
 def get_cfgs():
     env_cfg = {
         "num_actions": 12,
-        "robot_urdf": "urdf/go1/urdf/go1.urdf",
+        "robot_mjcf": "xml/go1/go1.xml",
         # joint/link names
         'links_to_keep': ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot',],
         "default_joint_angles": {  # [rad]
@@ -94,13 +94,15 @@ def get_cfgs():
             "RR_thigh_joint",
             "RR_calf_joint",
         ],
-        'PD_stiffness': {'hip':   20,
-                         'thigh': 20,
-                          'calf': 20},
+        'PD_stiffness': {'hip':   20.0,
+                         'thigh': 20.0,
+                          'calf': 20.0},
         'PD_damping': {'hip':    0.5,
                         'thigh': 0.5,
                         'calf':  0.5},
-
+        'force_limit': {'hip':    23.7,
+                        'thigh':  23.7,
+                        'calf':   23.7},
         # termination
         'termination_contact_link_names': ['base'],
         'penalized_contact_link_names': ['base', 'thigh', 'calf'],
@@ -123,6 +125,7 @@ def get_cfgs():
         "resampling_time_s": 4.0,
         "action_scale": 0.25,
         "simulate_action_latency": True,
+        'send_timeouts': True,
         "clip_actions": 100.0,
         'control_freq': 50,
         'decimation': 4,
@@ -138,11 +141,11 @@ def get_cfgs():
         'com_displacement_range': [-0.01, 0.01],
         'randomize_motor_strength': False,
         'motor_strength_range': [0.9, 1.1],
-        'randomize_motor_offset': False,
+        'randomize_motor_offset': True,
         'motor_offset_range': [-0.02, 0.02],
-        'randomize_kp_scale': False,
+        'randomize_kp_scale': True,
         'kp_scale_range': [0.8, 1.2],
-        'randomize_kd_scale': False,
+        'randomize_kd_scale': True,
         'kd_scale_range': [0.8, 1.2],
     }
     obs_cfg = {
@@ -166,6 +169,7 @@ def get_cfgs():
         "rear_feet_relative_height_from_base": 0.15,
         "soft_dof_pos_limit": 0.9,
         "soft_torque_limit": 1.0,
+        "only_positive_rewards": True,
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
@@ -174,11 +178,11 @@ def get_cfgs():
             "orientation": -1.0, #-30.0
             "ang_vel_xy": -0.05,
             "collision": -2.0,
-            "action_rate": -0.001,
-            "contact_no_vel": -0.2,
+            "action_rate": -0.1,
+            "contact_no_vel": -0.02,
             "dof_acc": -2.5e-7,
             "hip_pos": -.1, #-1.0
-            "contact": 0.18,
+            "contact": 0.1,
             "dof_pos_limits": -10.0,
             'torques': -0.00002,
             "termination": -30.0,
