@@ -102,11 +102,11 @@ def get_cfgs():
         'penalized_contact_link_names': ['base', 'thigh', 'calf'],
         'feet_link_names': ['foot'],
         'base_link_name': ['base'], 
-        "hip_names": [
-            "FL_hip",
-            "FR_hip",
-            "RL_hip",
-            "RR_hip",            
+        "hip_joint_names": [
+            # "FL_hip",
+            # "FR_hip",
+            "RL_hip_joint",
+            "RR_hip_joint",            
         ],
         "termination_if_roll_greater_than": 170,  # degree. 
         "termination_if_pitch_greater_than": 170,
@@ -119,6 +119,7 @@ def get_cfgs():
         "resampling_time_s": 4.0,
         "action_scale": 0.25,
         "simulate_action_latency": True,
+        'send_timeouts': True,
         "clip_actions": 100.0,
         # random push
         'push_interval_s': 5,

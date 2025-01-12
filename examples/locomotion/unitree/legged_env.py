@@ -153,14 +153,24 @@ class LeggedEnv:
         self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=self.device)
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
         self.inv_base_init_quat = inv_quat(self.base_init_quat)
-        self.robot = self.scene.add_entity(
-            gs.morphs.URDF(
-                file=self.env_cfg["robot_urdf"],
-                pos=self.base_init_pos.cpu().numpy(),
-                quat=self.base_init_quat.cpu().numpy(),
-                links_to_keep=self.env_cfg['links_to_keep'],
+        # self.robot = self.scene.add_entity(
+        #     gs.morphs.URDF(
+        #         file=self.env_cfg["robot_urdf"],
+        #         pos=self.base_init_pos.cpu().numpy(),
+        #         quat=self.base_init_quat.cpu().numpy(),
+        #         links_to_keep=self.env_cfg['links_to_keep'],
+        #     ),
+        # )
+        # self.robot = 
+
+        self.robot  = self.scene.add_entity(
+            gs.morphs.MJCF(
+            file=self.env_cfg["robot_mjcf"],
+            pos=self.base_init_pos.cpu().numpy(),
+            quat=self.base_init_quat.cpu().numpy(),
             ),
         )
+
         self.envs_origins = torch.zeros((self.num_envs, 7), device=self.device)
 
         # build
@@ -191,24 +201,37 @@ class LeggedEnv:
         self.feet_indices = find_link_indices(
             self.env_cfg['feet_link_names']
         )
+        print(f"motor dofs {self.motor_dofs}")
         print(self.feet_indices)
         # PD control
         stiffness = self.env_cfg['PD_stiffness']
         damping = self.env_cfg['PD_damping']
+        force_limit = self.env_cfg['force_limit']
 
-        self.p_gains, self.d_gains = [], []
+        self.p_gains, self.d_gains, self.force_limits = [], [], []
         for dof_name in self.env_cfg['dof_names']:
             for key in stiffness.keys():
                 if key in dof_name:
                     self.p_gains.append(stiffness[key])
                     self.d_gains.append(damping[key])
+        for dof_name in self.env_cfg['dof_names']:
+            for key in force_limit.keys():
+                if key in dof_name:
+                    self.force_limits.append(force_limit[key])
+        print(self.p_gains)
+        print(self.d_gains)
         self.p_gains = torch.tensor(self.p_gains, device=self.device)
         self.d_gains = torch.tensor(self.d_gains, device=self.device)
         self.batched_p_gains = self.p_gains[None, :].repeat(self.num_envs, 1)
         self.batched_d_gains = self.d_gains[None, :].repeat(self.num_envs, 1)
         self.robot.set_dofs_kp(self.p_gains, self.motor_dofs)
         self.robot.set_dofs_kv(self.d_gains, self.motor_dofs)
-
+        # Set the force range using the calculated force limits
+        self.robot.set_dofs_force_range(
+            lower=-np.array(self.force_limits),  # Negative lower limit
+            upper=np.array(self.force_limits),   # Positive upper limit
+            dofs_idx_local=self.motor_dofs
+        )
         # Store link indices that trigger termination or penalty
 
         # self.termination_contact_indices = env_cfg.get("termination_contact_indices", [])
@@ -714,6 +737,8 @@ class LeggedEnv:
             rew = reward_func() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
+        if self.reward_cfg["only_positive_rewards"]:
+            self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         if "termination" in self.reward_scales:
             rew = self._reward_termination() * self.reward_scales["termination"]
             self.rew_buf += rew
@@ -907,6 +932,9 @@ class LeggedEnv:
             - self.batched_d_gains * self.dof_vel
         )
         torques =  torques * self.motor_strengths
+
+            # torques = self.p_gains*(actions_scaled + self.default_dof_pos - self.dof_pos) - self.d_gains*self.dof_vel
+
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
 
 
@@ -1192,3 +1220,7 @@ class LeggedEnv:
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact_filt
         return rew_airTime
+
+    def _reward_feet_contact_forces(self):
+        # penalize high contact forces
+        return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.reward_cfg["max_contact_force"]).clip(min=0.), dim=1)
