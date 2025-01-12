@@ -28,8 +28,9 @@ vertical_scale = 0.005
 cols = 1
 rows = 1
 n_subterrains=(cols, rows)
-
-
+terrain_types = ["pyramid_down_stairs_terrain"] # 
+grid = [[None for _ in range(cols)] for _ in range(rows)]
+grid[0][0] = terrain_types[0]
 # Calculate the total width and height of the terrain
 total_width = (cols)* subterrain_size
 total_height =(rows)* subterrain_size
@@ -44,7 +45,7 @@ terrain  = gs.morphs.Terrain(
     n_subterrains=n_subterrains,
     horizontal_scale=horizontal_scale,
     vertical_scale=vertical_scale,
-    subterrain_types=terrain_types
+    subterrain_types=grid
 )
 scene.add_entity(terrain)
 go2 = scene.add_entity(
@@ -127,7 +128,7 @@ for i in range(150):
 ##########################
 # メイン制御ループ (PD制御など)
 ##########################
-for i in range(1250):
+for i in range(125000):
     if i == 0:
         # すべての関節にある程度の角度を与える
         go2.control_dofs_position(

@@ -108,17 +108,17 @@ def parse_terrain(morph: Terrain, surface):
                     ).height_field_raw
 
                 elif subterrain_type == "pyramid_stairs_terrain":
-                    step_height = random.uniform(0.1, 0.4)
+                    step_height = random.uniform(0.1, 0.25)
                     subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                         new_subterrain,
                         step_width=random.uniform(0.5, 0.75),
                         step_height= step_height,
                     ).height_field_raw
                 elif subterrain_type == "pyramid_down_stairs_terrain":
-                    step_height = random.uniform(-0.1, -0.4)
+                    step_height = random.uniform(-0.1, -0.25)
                     subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                         new_subterrain,
-                        step_width=random.uniform(0.5, 0.75),
+                        step_width= random.uniform(0.5, 0.75),
                         step_height= step_height,
                     ).height_field_raw
 
@@ -191,7 +191,7 @@ def fractal_terrain(terrain, levels=8, scale=1.0):
     return terrain
 
 
-def convert_heightfield_to_watertight_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
+def convert_heightfield_to_watertight_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=0.01):
     """
     Adapted from Issac Gym's `convert_heightfield_to_trimesh` function.
     Convert a heightfield array to a triangle mesh represented by vertices and triangles.
@@ -222,7 +222,7 @@ def convert_heightfield_to_watertight_trimesh(height_field_raw, horizontal_scale
     yy, xx = np.meshgrid(y, x)
 
     if slope_threshold is not None:
-        assert False  # our sdf representation doesn't support steep slopes well
+        # assert False  # our sdf representation doesn't support steep slopes well
 
         slope_threshold *= horizontal_scale / vertical_scale
         move_x = np.zeros((num_rows, num_cols))
