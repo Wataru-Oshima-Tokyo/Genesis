@@ -136,16 +136,16 @@ def get_cfgs():
         'randomize_friction': True,
         'friction_range': [0.1, 1.5],
         'randomize_base_mass': True,
-        'added_mass_range': [-1., 3.],
+        'added_mass_range': [-1., 5.],
         'randomize_com_displacement': True,
         'com_displacement_range': [-0.01, 0.01],
         'randomize_motor_strength': False,
         'motor_strength_range': [0.9, 1.1],
-        'randomize_motor_offset': True,
+        'randomize_motor_offset': False,
         'motor_offset_range': [-0.02, 0.02],
-        'randomize_kp_scale': True,
+        'randomize_kp_scale': False,
         'kp_scale_range': [0.8, 1.2],
-        'randomize_kd_scale': True,
+        'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
     }
     obs_cfg = {
@@ -166,10 +166,12 @@ def get_cfgs():
         "step_period": 0.8,
         "step_offset": 0.5,
         "front_feet_relative_height_from_base": 0.1,
+        "front_feet_relative_height_from_world": 0.2,
         "rear_feet_relative_height_from_base": 0.15,
         "soft_dof_pos_limit": 0.9,
         "soft_torque_limit": 1.0,
         "only_positive_rewards": True,
+        "max_contact_force": 200,
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
@@ -178,22 +180,26 @@ def get_cfgs():
             "ang_vel_xy": -0.1,
             "collision": -5.0,
             "action_rate": -0.01,
-            "contact_no_vel": -0.0001,
+            "contact_no_vel": -0.002,
             "dof_acc": -2.5e-7,
             "hip_pos": -1.0, #-1.0
-            "contact": 0.001,
+            "contact": 0.01,
             "dof_pos_limits": -3.0,
             'torques': -0.00002,
             "termination": -30.0,
+            "feet_contact_forces": -0.1
             # "front_feet_swing_height": -10.0, #-10.0
             # "rear_feet_swing_height": -0.1, #-10.0
         },
     }
     command_cfg = {
         "num_commands": 3,
-        "lin_vel_x_range": [-0.5, 0.5],
+        # "lin_vel_x_range": [.5, 1.0],
+        # "lin_vel_y_range": [0.0, 0.0],
+        # "ang_vel_range": [0.0, 0.0],
+        "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
-        "ang_vel_range": [-0.5, 0.5],
+        "ang_vel_range": [-1.0, 1.0],
     }
     noise_cfg = {
         "add_noise": True,
@@ -212,16 +218,15 @@ def get_cfgs():
         "subterrain_size": 12.0,
         "horizontal_scale": 0.25,
         "vertical_scale": 0.005,
-        "cols": 8,  #should be more than 5
-        "rows": 8,   #should be more than 5
+        "cols": 4,  #should be more than 5
+        "rows": 4,   #should be more than 5
         "selected_terrains":{
-            "flat_terrain" : {"probability": .5},
-            "random_uniform_terrain" : {"probability": 0.5},
-            "pyramid_sloped_terrain" : {"probability": 0.1},
-            "discrete_obstacles_terrain" : {"probability": 0.5},
-            "pyramid_stairs_terrain" : {"probability": 0.5},
-            "wave_terrain": {"probability": 0.5},
-
+            "flat_terrain" : {"probability": 0.3},
+            "random_uniform_terrain" : {"probability": 0.3},
+            "pyramid_sloped_terrain" : {"probability": 0.3},
+            "discrete_obstacles_terrain" : {"probability": 0.3},
+            "pyramid_down_stairs_terrain" : {"probability": 0.3},
+            "pyramid_steep_down_stairs_terrain" : {"probability": 0.0},
         }
     }
 
@@ -232,7 +237,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="go1_rough_walking")
     parser.add_argument("-B", "--num_envs", type=int, default=10000)
-    parser.add_argument("--max_iterations", type=int, default=1000)
+    parser.add_argument("--max_iterations", type=int, default=100000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")

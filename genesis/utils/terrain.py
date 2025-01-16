@@ -109,19 +109,28 @@ def parse_terrain(morph: Terrain, surface):
 
                 elif subterrain_type == "pyramid_stairs_terrain":
                     step_height = random.uniform(0.1, 0.25)
+                    step_width = random.uniform(0.5, 0.75)
                     subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                         new_subterrain,
-                        step_width=random.uniform(0.5, 0.75),
+                        step_width=step_width,
                         step_height= step_height,
                     ).height_field_raw
                 elif subterrain_type == "pyramid_down_stairs_terrain":
                     step_height = random.uniform(-0.1, -0.25)
+                    step_width = random.uniform(0.5, 0.75)
                     subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                         new_subterrain,
-                        step_width= random.uniform(0.5, 0.75),
+                        step_width= step_width,
                         step_height= step_height,
                     ).height_field_raw
-
+                elif subterrain_type == "pyramid_steep_down_stairs_terrain":
+                    step_height = -0.3 
+                    step_width = 0.5
+                    subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                        new_subterrain,
+                        step_width= step_width,
+                        step_height= step_height,
+                    ).height_field_raw
                 elif subterrain_type == "stepping_stones_terrain":
                     subterrain_height_field = isaacgym_terrain_utils.stepping_stones_terrain(
                         new_subterrain,

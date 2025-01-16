@@ -127,13 +127,15 @@ class LeggedEnv:
             # Get the terrain's origin position in world coordinates
             terrain_origin_x, terrain_origin_y, terrain_origin_z = self.terrain.pos
 
-            # Calculate the center of each subterrain in world coordinates
+            self.terrain_min_x = - (total_width  / 2.0)
+            self.terrain_max_x =   (total_width  / 2.0)
+            self.terrain_min_y = - (total_height / 2.0)
+            self.terrain_max_y =   (total_height / 2.0)
+                        # Calculate the center of each subterrain in world coordinates
             self.subterrain_centers = []
             
             for row in range(self.rows):
                 for col in range(self.cols):
-                    if row == 0 or row == 1 or col == 0 or col == 1 or row == (self.rows -2) or row == (self.rows -1) or col == (self.cols -2) or col == (self.cols -1):
-                        continue
                     subterrain_center_x = terrain_origin_x + (col + 0.5) * subterrain_size
                     subterrain_center_y = terrain_origin_y + (row + 0.5) * subterrain_size
                     subterrain_center_z = subterrain_center_z_values[row][col]
@@ -153,16 +155,6 @@ class LeggedEnv:
         self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=self.device)
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
         self.inv_base_init_quat = inv_quat(self.base_init_quat)
-        # self.robot = self.scene.add_entity(
-        #     gs.morphs.URDF(
-        #         file=self.env_cfg["robot_urdf"],
-        #         pos=self.base_init_pos.cpu().numpy(),
-        #         quat=self.base_init_quat.cpu().numpy(),
-        #         links_to_keep=self.env_cfg['links_to_keep'],
-        #     ),
-        # )
-        # self.robot = 
-
         self.robot  = self.scene.add_entity(
             gs.morphs.MJCF(
             file=self.env_cfg["robot_mjcf"],
@@ -284,6 +276,7 @@ class LeggedEnv:
         self.reset_buf = torch.ones((self.num_envs,), device=self.device, dtype=gs.tc_int)
         self.episode_length_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_int)
         self.time_out_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_int)
+        self.out_of_bounds_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_int)
         self.commands = torch.zeros((self.num_envs, self.num_commands), device=self.device, dtype=gs.tc_float)
         self.commands_scale = torch.tensor(
             [self.obs_scales["lin_vel"], self.obs_scales["lin_vel"], self.obs_scales["ang_vel"]],
@@ -383,6 +376,16 @@ class LeggedEnv:
 
 
 
+    def _resample_commands_max(self, envs_idx):
+        # Sample linear and angular velocities
+        self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
+        self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["lin_vel_y_range"], (len(envs_idx),), self.device)
+        self.commands[envs_idx, 2] = gs_rand_float(*self.command_cfg["ang_vel_range"], (len(envs_idx),), self.device)
+
+        # Randomly multiply by -1 or 1 (50/50 chance)
+        random_signs = torch.randint(0, 2, self.commands[envs_idx].shape, device=self.device) * 2 - 1
+        self.commands[envs_idx] *= random_signs
+
 
     def _resample_commands(self, envs_idx):
         self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
@@ -431,6 +434,8 @@ class LeggedEnv:
             return 5.0
         elif terrain_choice == "pyramid_down_stairs_terrain":
             return -0.1
+        elif terrain_choice == "pyramid_steep_down_stairs_terrain":
+            return -3.0
         elif terrain_choice == "wave_terrain":
             return 0.5
         else:
@@ -442,6 +447,7 @@ class LeggedEnv:
         self.step_period = self.reward_cfg["step_period"]
         self.step_offset = self.reward_cfg["step_offset"]
         self.step_height_for_front = self.reward_cfg["front_feet_relative_height_from_base"]
+        self.step_height_for_front_from_world = self.reward_cfg["front_feet_relative_height_from_world"]
         self.step_height_for_rear = self.reward_cfg["rear_feet_relative_height_from_base"]
         #todo get he first feet_pos here
         # Get positions for all links and slice using indices
@@ -611,10 +617,10 @@ class LeggedEnv:
             .nonzero(as_tuple=False)
             .flatten()
         )
-        self._resample_commands(envs_idx)
 
         self.post_physics_step_callback()
         self._resample_commands(envs_idx)
+        # self._resample_commands_max(envs_idx)
         self._randomize_rigids(envs_idx)
         # random push
         self.common_step_counter += 1
@@ -791,22 +797,25 @@ class LeggedEnv:
             self.reset_buf |= torch.abs(self.base_euler[:, 0]) > self.termination_if_roll_greater_than_value
         # Timeout termination
         self.reset_buf |= self.base_pos[:, 2] < self.env_cfg['termination_if_height_lower_than']
+        # -------------------------------------------------------
+        #  Add out-of-bounds check using terrain_min_x, etc.
+        # -------------------------------------------------------
+        # min_x, max_x, min_y, max_y = self.terrain_bounds  # or however you store them
+        
+        # We assume base_pos[:, 0] is x, base_pos[:, 1] is y
+        if self.terrain_type != "plane":
+            self.out_of_bounds_buf = (
+                (self.base_pos[:, 0] < self.terrain_min_x) |
+                (self.base_pos[:, 0] > self.terrain_max_x) |
+                (self.base_pos[:, 1] < self.terrain_min_y) |
+                (self.base_pos[:, 1] > self.terrain_max_y)
+            )
+            self.reset_buf |= self.out_of_bounds_buf
+        # For those that are out of bounds, penalize by marking episode_length_buf = max
+        # self.episode_length_buf[out_of_bounds] = self.max_episode_length
 
         self.time_out_buf = self.episode_length_buf > self.max_episode_length  # no terminal reward for time-outs
         self.reset_buf |= self.time_out_buf
-        # # if any link in `termination_contact_indices` exceeds threshold, reset that env
-        # self.reset_buf = torch.any(base_contact > 1.0, dim=1)
-        # self.reset_buf = self.episode_length_buf > self.max_episode_length
-
-        # # 2) Terminate if pitch or roll exceed thresholds
-        # self.reset_buf |= torch.logical_or(
-        #     torch.abs(self.base_euler[:, 1]) > 1.0,  # pitch
-        #     torch.abs(self.base_euler[:, 0]) > 0.8   # roll
-        # )
-
-        # # 3) Time-out termination
-        # self.time_out_buf = self.episode_length_buf > self.max_episode_length
-        # self.reset_buf |= self.time_out_buf
 
     def reset_idx(self, envs_idx):
         if len(envs_idx) == 0:
@@ -874,6 +883,7 @@ class LeggedEnv:
             )
             self.episode_sums[key][envs_idx] = 0.0
         self._resample_commands(envs_idx)
+        # self._resample_commands_max(envs_idx)
         if self.env_cfg['send_timeouts']:
             self.extras['time_outs'] = self.time_out_buf
 
@@ -885,6 +895,7 @@ class LeggedEnv:
         positions = torch.zeros((self.num_envs, 3), device=self.device)
         for i in range(self.num_envs):
             x, y, z = self._random_robot_position()
+            # positions[i] = torch.tensor([0, 0, z], device=self.device)
             positions[i] = torch.tensor([x, y, z], device=self.device)
         return positions
 
@@ -1158,11 +1169,17 @@ class LeggedEnv:
 
 
 
-    def _reward_front_feet_swing_height(self):
+    def _reward_front_feet_swing_height_from_base(self):
         # Get contact forces and determine which feet are in contact
         contact = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0
         pos_error = torch.square((self.step_height_for_front - self.front_feet_pos_base[:, :, 2]) * ~contact)
         return torch.sum(pos_error, dim=1)
+
+
+    def _reward_front_feet_swing_height_from_world(self):
+        contact = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0
+        pos_error = torch.square(self.feet_front_pos[:, :, 2] - self.step_height_for_front_from_world) * ~contact
+        return torch.sum(pos_error, dim=(1))
 
     def _reward_rear_feet_swing_height(self):
         # Get contact forces and determine which feet are in contact
@@ -1207,7 +1224,7 @@ class LeggedEnv:
 
     def _reward_termination(self):
         # Terminal reward / penalty
-        return self.reset_buf * ~self.time_out_buf
+        return self.reset_buf & ~self.time_out_buf & ~self.out_of_bounds_buf
 
     def _reward_feet_air_time(self):
         # Reward long steps
