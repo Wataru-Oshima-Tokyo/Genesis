@@ -139,7 +139,13 @@ def parse_terrain(morph: Terrain, surface):
                         max_height=0.2,
                         platform_size=0.0,
                     ).height_field_raw
-
+                elif subterrain_type == "custom_terrain":
+                    subterrain_height_field = isaacgym_terrain_utils.custom_terrain(
+                        new_subterrain,
+                        step_size=1.0,
+                        max_step_height=0.25,
+                        num_steps=12,
+                    ).height_field_raw
                 else:
                     gs.raise_exception(f"Unsupported subterrain type: {subterrain_type}")
 

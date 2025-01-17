@@ -329,6 +329,61 @@ def stepping_stones_terrain(terrain, stone_size, stone_distance, max_height, pla
     return terrain
 
 
+
+def custom_terrain(terrain, step_size=1.0, max_step_height=0.1, num_steps=10):
+    """
+    Generate a simple terrain with random *vertical* (90-degree) steps along the x-axis.
+    In heightmap terms, this means each step is a single-column transition.
+
+    Parameters:
+        terrain (object): Terrain object with attributes:
+                          - width, length (discrete dimensions)
+                          - horizontal_scale (m per sample)
+                          - vertical_scale (m per height unit)
+                          - height_field_raw (2D numpy array, shape [width, length])
+        step_size (float): Width (in meters) of each step along the x-axis.
+        max_step_height (float): Maximum absolute step height (in meters).
+        num_steps (int): Number of random steps to create.
+
+    Returns:
+        terrain (object): The terrain object with updated height_field_raw.
+    """
+    # Convert step size in meters to number of horizontal samples.
+    step_size_in_samples = max(1, int(step_size / terrain.horizontal_scale))
+
+    # Convert max step height in meters to integer height units.
+    max_step_height_units = int(max_step_height / terrain.vertical_scale)
+
+    # Optionally clear the terrain first (set everything to a base height).
+    terrain.height_field_raw[:, :] = 0
+
+    current_x = 0
+    current_height = 0  # Start at height = 0
+
+    for _ in range(num_steps):
+        # Determine how far to extend this step (in x-direction).
+        next_x = min(terrain.width, current_x + step_size_in_samples)
+
+        # Choose a random step height delta in integer units.
+        # e.g., if max_step_height_units = 10, delta could be between -10 and +10.
+        delta_height = np.random.randint(-max_step_height_units, max_step_height_units + 1)
+
+        # The new step's height is the old height plus delta.
+        current_height += delta_height
+
+        # Apply this new height to all cells in the [current_x : next_x, :] slice.
+        terrain.height_field_raw[current_x:next_x, :] = current_height
+
+        # Advance 'current_x' to the end of this step.
+        current_x = next_x
+
+        # If we've hit or exceeded the terrain width, no more steps can be placed.
+        if current_x >= terrain.width:
+            break
+
+    return terrain
+
+
 def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
     """
     Convert a heightfield array to a triangle mesh represented by vertices and triangles.

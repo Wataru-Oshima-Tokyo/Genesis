@@ -221,6 +221,7 @@ def get_cfgs():
         "cols": 4,  #should be more than 5
         "rows": 4,   #should be more than 5
         "selected_terrains":{
+            "custom_terrain" : {"probability": 100.5},
             "flat_terrain" : {"probability": 0.3},
             "random_uniform_terrain" : {"probability": 0.3},
             "pyramid_sloped_terrain" : {"probability": 0.3},
