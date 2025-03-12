@@ -40,16 +40,29 @@ class LeggedEnv:
         self.noise_scales = noise_cfg["noise_scales"]
         self.selected_terrains = terrain_cfg["selected_terrains"]
 
+        
+        if self.env_cfg["randomize_delay"]:
+            # 1️⃣ Define Delay Parameters
+            self.min_delay, self.max_delay = self.env_cfg["delay_range"]  # Delay range in seconds
+            self.max_delay_steps = int(self.max_delay / self.dt)  # Convert max delay to steps
+
+            # 2️⃣ Initialize Delay Buffers
+            self.action_delay_buffer = torch.zeros(
+                (self.num_envs, self.num_actions, self.max_delay_steps + 1), device=self.device
+            )
+            self.motor_delay_steps = torch.randint(
+                int(self.min_delay / self.dt), self.max_delay_steps + 1,
+                (self.num_envs, self.num_actions), device=self.device
+            )
+            print("Enabled random delay")
         # create scene
         self.scene = gs.Scene(
             sim_options=gs.options.SimOptions(
                 dt=sim_dt,
-                # dt=self.dt,
                 substeps=sim_substeps,
             ),
             viewer_options=gs.options.ViewerOptions(
                 max_FPS=int(1 / self.dt * self.env_cfg['decimation']),
-                # max_FPS=int(1 / self.dt),
                 camera_pos=(2.0, 0.0, 2.5),
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=40,
@@ -64,10 +77,7 @@ class LeggedEnv:
             ),
             show_viewer=False,
         )
-        for solver in self.scene.sim.solvers:
-            if not isinstance(solver, RigidSolver):
-                continue
-            self.rigid_solver = solver
+
 
         self.show_vis = show_viewer
         self.selected_robot = 0
@@ -538,7 +548,25 @@ class LeggedEnv:
 
     def step(self, actions):
         self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
-        exec_actions = self.last_actions if self.simulate_action_latency else self.actions
+        if self.env_cfg["randomize_delay"]:
+            # 3️⃣ Store new actions in delay buffer (Shift the buffer)
+            self.action_delay_buffer[:, :, :-1] = self.action_delay_buffer[:, :, 1:].clone()
+            self.action_delay_buffer[:, :, -1] = self.actions  # Insert latest action
+
+            # 3) Vectorized gather for delayed actions
+
+            T = self.action_delay_buffer.shape[-1]  # T = max_delay_steps + 1
+            # (num_envs, num_actions)
+            delayed_indices = (T - 1) - self.motor_delay_steps
+            # Expand to (num_envs, num_actions, 1)
+            gather_indices = delayed_indices.unsqueeze(-1)
+
+            # Gather from last dimension
+            delayed_actions = self.action_delay_buffer.gather(dim=2, index=gather_indices).squeeze(-1)
+
+            exec_actions = delayed_actions
+        else:
+            exec_actions = self.last_actions if self.simulate_action_latency else self.actions
         dof_pos_list = []
         dof_vel_list = []
         for i in range(self.env_cfg['decimation']):
@@ -623,7 +651,6 @@ class LeggedEnv:
 
         self.post_physics_step_callback()
         self._resample_commands(envs_idx)
-        # self._resample_commands_max(envs_idx)
         self._randomize_rigids(envs_idx)
         # random push
         self.common_step_counter += 1

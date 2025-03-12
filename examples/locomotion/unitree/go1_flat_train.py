@@ -133,19 +133,21 @@ def get_cfgs():
         'push_interval_s': 5,
         'max_push_vel_xy': 1.0,
         # domain randomization
+        'randomize_delay': True,
+        'delay_range': [0.0, 0.3], #seconds        
         'randomize_friction': True,
         'friction_range': [0.1, 1.5],
         'randomize_base_mass': True,
-        'added_mass_range': [-1., 3.],
-        'randomize_com_displacement': True,
+        'added_mass_range': [-1., 1.],
+        'randomize_com_displacement': False,
         'com_displacement_range': [-0.01, 0.01],
         'randomize_motor_strength': False,
         'motor_strength_range': [0.9, 1.1],
-        'randomize_motor_offset': True,
+        'randomize_motor_offset': False,
         'motor_offset_range': [-0.02, 0.02],
-        'randomize_kp_scale': True,
+        'randomize_kp_scale': False,
         'kp_scale_range': [0.8, 1.2],
-        'randomize_kd_scale': True,
+        'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
     }
     obs_cfg = {
