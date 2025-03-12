@@ -201,7 +201,7 @@ def get_cfgs():
         "num_commands": 3,
         "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
-        "ang_vel_range": [-0.5, 0.5],
+        "ang_vel_range": [-1.0, 1.0],
     }
     noise_cfg = {
         "add_noise": True,
@@ -240,7 +240,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="go1_walking")
     parser.add_argument("-B", "--num_envs", type=int, default=10000)
-    parser.add_argument("--max_iterations", type=int, default=1000)
+    parser.add_argument("--max_iterations", type=int, default=10000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")

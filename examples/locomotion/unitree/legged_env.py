@@ -580,13 +580,13 @@ class LeggedEnv:
             self.dof_pos[:] = self.robot.get_dofs_position(self.motor_dofs)
             self.dof_vel[:] = self.robot.get_dofs_velocity(self.motor_dofs)
 
-            if i == 0 or i == 2:
-                dof_pos_list.append(self.robot.get_dofs_position().detach().cpu())
-                dof_vel_list.append(self.robot.get_dofs_velocity().detach().cpu())
+            # if i == 0 or i == 2:
+            #     dof_pos_list.append(self.robot.get_dofs_position().detach().cpu())
+            #     dof_vel_list.append(self.robot.get_dofs_velocity().detach().cpu())
 
         # target_dof_pos = exec_actions * self.env_cfg["action_scale"] + self.default_dof_pos
-        self.dof_pos_list = dof_pos_list
-        self.dof_vel_list = dof_vel_list
+        # self.dof_pos_list = dof_pos_list
+        # self.dof_vel_list = dof_vel_list
         # self.torques = self._compute_torques(exec_actions)
         # self.robot.control_dofs_position(target_dof_pos, self.motor_dofs)
 
@@ -650,8 +650,7 @@ class LeggedEnv:
         )
 
         self.post_physics_step_callback()
-        self._resample_commands(envs_idx)
-        self._randomize_rigids(envs_idx)
+        
         # random push
         self.common_step_counter += 1
         push_interval_s = self.env_cfg['push_interval_s']
@@ -906,6 +905,8 @@ class LeggedEnv:
         self.reset_buf[envs_idx] = True
         self.contact_duration_buf[envs_idx] = 0.0
         # fill extras
+        self._resample_commands(envs_idx)
+        self._randomize_rigids(envs_idx)
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]["rew_" + key] = (
