@@ -104,10 +104,10 @@ def get_cfgs():
                         'thigh':  23.7,
                         'calf':   23.7},
         # termination
-        'termination_contact_link_names': ['base'],
-        'penalized_contact_link_names': ['base', 'thigh', 'calf'],
+        'termination_contact_link_names': ['trunk'],
+        'penalized_contact_link_names': ['trunk', 'thigh', 'calf'],
         'feet_link_names': ['foot'],
-        'base_link_name': ['base'], 
+        'base_link_name': ['trunk'], 
         "hip_joint_names": [
             # "FL_hip_joint",
             # "FR_hip_joint",

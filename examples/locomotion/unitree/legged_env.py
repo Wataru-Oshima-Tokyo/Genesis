@@ -193,6 +193,9 @@ class LeggedEnv:
         self.feet_indices = find_link_indices(
             self.env_cfg['feet_link_names']
         )
+        self.base_link_index = find_link_indices(
+            self.env_cfg['base_link_name']
+        )
         print(f"motor dofs {self.motor_dofs}")
         print(self.feet_indices)
         # PD control
@@ -229,7 +232,7 @@ class LeggedEnv:
         # self.termination_contact_indices = env_cfg.get("termination_contact_indices", [])
         # self.penalised_contact_indices = env_cfg.get("penalised_contact_indices", [])
         # Convert link names to indices
-        # self.termination_contact_indices = [self.robot.get_link(name).idx_local  for name in self.env_cfg["termination_contact_names"]]
+        # self.termination_contact_indices = [self.rself.base_link_indexobot.get_link(name).idx_local  for name in self.env_cfg["termination_contact_names"]]
         # self.penalised_contact_indices = [self.robot.get_link(name).idx_local  for name in self.env_cfg["penalised_contact_names"]]
         # self.feet_indices = [self.robot.get_link(name).idx_local  for name in self.env_cfg["feet_names"]]
         self.feet_front_indices = self.feet_indices[:2]
@@ -1029,41 +1032,47 @@ class LeggedEnv:
             self._randomize_kd(env_ids)
 
     def _randomize_link_friction(self, env_ids):
-
         min_friction, max_friction = self.env_cfg['friction_range']
 
-        solver = self.rigid_solver
+        # Generate random friction values only for the selected environments
+        random_friction = min_friction + (max_friction - min_friction) * torch.rand(len(env_ids), self.robot.n_links)
 
-        ratios = gs.rand((len(env_ids), 1), dtype=float).repeat(1, solver.n_geoms) \
-                 * (max_friction - min_friction) + min_friction
-        if torch.isnan(ratios).any():
-            print("NaN in friction ratios before applying them!")
-            print("ratios:", ratios)
-            raise ValueError("NaNs in friction ratios.")
-
-
-        solver.set_geoms_friction_ratio(ratios, torch.arange(0, solver.n_geoms), env_ids)
+        # Apply friction to the specified environments
+        self.robot.set_friction_ratio(
+            friction_ratio=random_friction,
+            ls_idx_local=np.arange(0, self.robot.n_links),
+            envs_idx=env_ids,  # Apply only to selected environments
+        )
+        
 
     def _randomize_base_mass(self, env_ids):
 
         min_mass, max_mass = self.env_cfg['added_mass_range']
-        base_link_id = 1
+        mass_shift = min_mass + (max_mass - min_mass) * torch.rand(len(env_ids), 1, device=self.device)
+        ls_idx_local = torch.tensor(self.base_link_index, device=self.device, dtype=torch.int32)
 
-        added_mass = gs.rand((len(env_ids), 1), dtype=float) \
-                        * (max_mass - min_mass) + min_mass
+        # Apply only to base_link in the selected environments
+        self.robot.set_mass_shift(
+            mass_shift=mass_shift,
+            ls_idx_local=ls_idx_local,  
+            envs_idx=env_ids  
+        )
 
-        self.rigid_solver.set_links_mass_shift(added_mass, [base_link_id,], env_ids)
 
     def _randomize_com_displacement(self, env_ids):
 
         min_displacement, max_displacement = self.env_cfg['com_displacement_range']
-        base_link_id = 1
+        com_shift = min_displacement + (max_displacement - min_displacement) * torch.rand(len(env_ids), 1, 3, device=self.device)
+        ls_idx_local = torch.tensor(self.base_link_index, device=self.device, dtype=torch.int32)
 
-        com_displacement = gs.rand((len(env_ids), 1, 3), dtype=float) \
-                            * (max_displacement - min_displacement) + min_displacement
-        # com_displacement[:, :, 0] -= 0.02
 
-        self.rigid_solver.set_links_COM_shift(com_displacement, [base_link_id,], env_ids)
+        # Apply only to base_link in the selected environments
+        self.robot.set_COM_shift(
+            com_shift=com_shift,
+            ls_idx_local=ls_idx_local,  # Wrap it in a list
+            envs_idx=env_ids  # Apply only to specific environments
+        )
+
 
     def _randomize_motor_strength(self, env_ids):
 
