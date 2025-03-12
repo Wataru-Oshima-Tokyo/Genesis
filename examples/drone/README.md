@@ -58,7 +58,13 @@ Train the drone hovering policy using the `HoverEnv` environment.
 Run with:
 
 ```bash
-python hover_train.py -e drone-hovering -B 8192 --max_iterations 500
+python hover_train.py -e drone-hovering -B 8192 --max_iterations 300
+```
+
+Train with visualization:
+
+```bash
+python hover_train.py -e drone-hovering -B 8192 --max_iterations 300 -v
 ```
 
 #### 3.2 Evaluation
@@ -68,11 +74,24 @@ Evaluate the trained drone hovering policy.
 Run with:
 
 ```bash
-python hover_eval.py -e drone-hovering --ckpt 500 --record
+python hover_eval.py -e drone-hovering --ckpt 300 --record
 ```
 
 **Note**: If you experience slow performance or encounter other issues 
 during evaluation, try removing the `--record` option.
+
+For the latest updates, detailed documentation, and additional resources, visit this repository: [GenesisDroneEnv](https://github.com/KafuuChikai/GenesisDroneEnv).
+
+### 4. Quadcopter Controller (`quadcopter_controller.py` & `fly_route.py`)
+A PID-based controller to provide stable point-to-point flight without controlling each rotor. Parameters
+have been tuned for controlled flight but not optimized. Stored in `fly_route.py`. Run `fly_route.py` to
+test.
+
+Run with:
+
+```bash
+python fly_route.py
+```
 
 ## Technical Details
 

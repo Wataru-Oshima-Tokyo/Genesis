@@ -68,6 +68,7 @@ class OffscreenRenderer(object):
         seg=False,
         ret_depth=False,
         plane_reflection=False,
+        env_separate_rigid=False,
         normal=False,
     ):
         """Render a scene with the given set of flags.
@@ -112,6 +113,9 @@ class OffscreenRenderer(object):
         if plane_reflection:
             flags |= RenderFlags.REFLECTIVE_FLOOR
 
+        if env_separate_rigid:
+            flags |= RenderFlags.ENV_SEPARATE
+
         if seg:
             seg_node_map = self._seg_node_map
             flags |= RenderFlags.SEG
@@ -151,7 +155,11 @@ class OffscreenRenderer(object):
 
             old_cache = renderer._program_cache
             renderer._program_cache = CustomShaderCache()
-            normal_arr, _ = renderer.render(scene, RenderFlags.FLAT | RenderFlags.OFFSCREEN)
+
+            flags = RenderFlags.FLAT | RenderFlags.OFFSCREEN
+            if env_separate_rigid:
+                flags |= RenderFlags.ENV_SEPARATE
+            normal_arr, _ = renderer.render(scene, flags)
             retval = retval + (normal_arr,)
             renderer._program_cache = old_cache
 
@@ -181,8 +189,11 @@ class OffscreenRenderer(object):
         elif platform == "egl":
             from .platforms import egl
 
-            device_id = int(os.environ.get("EGL_DEVICE_ID", "0"))
-            egl_device = egl.get_device_by_index(device_id)
+            if "EGL_DEVICE_ID" in os.environ:
+                device_id = int(os.environ["EGL_DEVICE_ID"])
+                egl_device = egl.get_device_by_index(device_id)
+            else:
+                egl_device = None
             self._platform = egl.EGLPlatform(self.viewport_width, self.viewport_height, device=egl_device)
         elif platform == "osmesa":
             from .platforms.osmesa import OSMesaPlatform

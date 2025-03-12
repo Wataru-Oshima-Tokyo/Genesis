@@ -29,6 +29,7 @@ class RigidGeom(RBC):
         vert_start,
         face_start,
         edge_start,
+        verts_state_start,
         mesh,
         type,
         friction,
@@ -36,6 +37,8 @@ class RigidGeom(RBC):
         init_pos,
         init_quat,
         needs_coup,
+        contype,
+        conaffinity,
         center_init=None,
         data=None,
     ):
@@ -51,11 +54,14 @@ class RigidGeom(RBC):
         self._friction = friction
         self._sol_params = sol_params
         self._needs_coup = needs_coup
+        self._contype = contype
+        self._conaffinity = conaffinity
         self._is_convex = mesh.is_convex
         self._cell_start = cell_start
         self._vert_start = vert_start
         self._face_start = face_start
         self._edge_start = edge_start
+        self._verts_state_start = verts_state_start
 
         self._coup_softness = self._material.coup_softness
         self._coup_friction = self._material.coup_friction
@@ -98,7 +104,6 @@ class RigidGeom(RBC):
 
     def _preprocess(self):
         # compute file name via hashing for caching
-
         self._gsd_path = mu.get_gsd_path(
             self._init_verts,
             self._init_faces,
@@ -107,7 +112,18 @@ class RigidGeom(RBC):
             self._material.sdf_max_res,
         )
 
-        if not os.path.exists(self._gsd_path):
+        # loading pre-computed cache if available
+        is_cached_loaded = False
+        if os.path.exists(self._gsd_path):
+            gs.logger.debug(f"Preprocessed file (`.gsd`) found in cache for geom idx {self._idx}.")
+            try:
+                with open(self._gsd_path, "rb") as file:
+                    gsd_dict = pkl.load(file)
+                is_cached_loaded = True
+            except (EOFError, pkl.UnpicklingError):
+                gs.logger.info("Ignoring corrupted cache.")
+
+        if not is_cached_loaded:
             with gs.logger.timer(f"Preprocessing geom idx ~~<{self._idx}>~~."):
                 ######## sdf ########
                 lower = self._init_verts.min(axis=0)
@@ -184,7 +200,7 @@ class RigidGeom(RBC):
                 vert_n_neighbors = np.array(vert_n_neighbors)
                 vert_neighbor_start = np.array(vert_neighbor_start)
 
-                # compile
+                # caching
                 gsd_dict = {
                     "sdf_res": sdf_res,
                     "sdf_val": sdf_val,
@@ -201,11 +217,6 @@ class RigidGeom(RBC):
                 os.makedirs(os.path.dirname(self._gsd_path), exist_ok=True)
                 with open(self._gsd_path, "wb") as file:
                     pkl.dump(gsd_dict, file)
-        else:
-            gs.logger.debug(f"Preprocessed `.gsd` file found in cache for geom idx {self._idx}.")
-
-            with open(self._gsd_path, "rb") as file:
-                gsd_dict = pkl.load(file)
 
         self._sdf_res = gsd_dict["sdf_res"]
         self._sdf_val = gsd_dict["sdf_val"]
@@ -221,11 +232,17 @@ class RigidGeom(RBC):
         self.vert_neighbor_start = gsd_dict["vert_neighbor_start"]
 
     def _compute_sd(self, query_points):
-        sd, _, _ = igl.signed_distance(query_points, self._sdf_verts, self._sdf_faces)
+        try:
+            sd, _, _ = igl.signed_distance(query_points, self._sdf_verts, self._sdf_faces)
+        except:
+            sd, _, _, _ = igl.signed_distance(query_points, self._sdf_verts, self._sdf_faces)
         return sd
 
     def _compute_closest_verts(self, query_points):
-        _, closest_faces, _ = igl.signed_distance(query_points, self._init_verts, self._init_faces)
+        try:
+            _, closest_faces, _ = igl.signed_distance(query_points, self._init_verts, self._init_faces)
+        except:
+            _, closest_faces, _, _ = igl.signed_distance(query_points, self._init_verts, self._init_faces)
         verts_ids = self._init_faces[closest_faces]
         verts_ids = verts_ids[
             np.arange(len(query_points)).astype(int),
@@ -454,20 +471,34 @@ class RigidGeom(RBC):
         """
         Get the vertices of the geom in world frame.
         """
-        tensor = torch.empty(self._solver._batch_shape((self.n_verts, 3), True), dtype=gs.tc_float, device=gs.device)
-        self._kernel_get_verts(tensor)
-        if self._solver.n_envs == 0:
-            tensor = tensor.squeeze(0)
+        if self.is_free:
+            tensor = torch.empty(
+                self._solver._batch_shape((self.n_verts, 3), True), dtype=gs.tc_float, device=gs.device
+            )
+            self._kernel_get_free_verts(tensor)
+            if self._solver.n_envs == 0:
+                tensor = tensor.squeeze(0)
+        else:
+            tensor = torch.empty((self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
+            self._kernel_get_fixed_verts(tensor)
         return tensor
 
     @ti.kernel
-    def _kernel_get_verts(self, tensor: ti.types.ndarray()):
+    def _kernel_get_free_verts(self, tensor: ti.types.ndarray()):
         for b in range(self._solver._B):
             self._solver._func_update_verts_for_geom(self._idx, b)
 
         for i, j, b in ti.ndrange(self.n_verts, 3, self._solver._B):
-            idx_vert = i + self._vert_start
-            tensor[b, i, j] = self._solver.verts_state[idx_vert, b].pos[j]
+            idx_vert = i + self._verts_state_start
+            tensor[b, i, j] = self._solver.free_verts_state[idx_vert, b].pos[j]
+
+    @ti.kernel
+    def _kernel_get_fixed_verts(self, tensor: ti.types.ndarray()):
+        self._solver._func_update_verts_for_geom(self._idx, 0)
+
+        for i, j in ti.ndrange(self.n_verts, 3):
+            idx_vert = i + self._verts_state_start
+            tensor[i, j] = self._solver.fixed_verts_state[idx_vert].pos[j]
 
     @gs.assert_built
     def get_AABB(self):
@@ -572,6 +603,27 @@ class RigidGeom(RBC):
         Get whether the geom needs coupling with other non-rigid entities.
         """
         return self._needs_coup
+
+    @property
+    def contype(self):
+        """
+        Get the contact type of the geometry for collision pair filtering.
+
+        The two geoms are deemed "compatible" (i.e. collisions between them is allowed) if the 'contype' of one geom
+        and the 'conaffinity' of the other geom have a common bit set to 1, i.e.
+        `(geom1.contype & geom2.conaffinity) || (geom2.contype & geom1.conaffinity) == True`. This is a powerful
+        mechanism borrowed from Open Dynamics Engine.
+        """
+        return self._contype
+
+    @property
+    def conaffinity(self):
+        """
+        Get the contact affinity of the geometry for collision pair filtering.
+
+        See `contype` documentation for details.
+        """
+        return self._conaffinity
 
     @property
     def coup_softness(self):
@@ -798,6 +850,13 @@ class RigidGeom(RBC):
         return self._edge_start
 
     @property
+    def verts_state_start(self):
+        """
+        Get the starting index of the geom's vertices in the rigid solver.
+        """
+        return self._verts_state_start
+
+    @property
     def cell_end(self):
         """
         Get the ending index of the cells of the signed distance field (SDF) in the rigid solver.
@@ -810,6 +869,13 @@ class RigidGeom(RBC):
         Get the ending index of the geom's vertices in the rigid solver.
         """
         return self.n_verts + self.vert_start
+
+    @property
+    def verts_state_end(self):
+        """
+        Get the ending index of the geom's vertices in the rigid solver.
+        """
+        return self.n_verts + self.verts_state_start
 
     @property
     def face_end(self):
@@ -831,6 +897,13 @@ class RigidGeom(RBC):
         Whether the rigid entity the geom belongs to is built.
         """
         return self.entity.is_built
+
+    @property
+    def is_free(self):
+        """
+        Whether the rigid entity the vgeom belongs to is free.
+        """
+        return self.entity.is_free
 
     # ------------------------------------------------------------------------------------
     # -------------------------------------- repr ----------------------------------------
@@ -1034,6 +1107,13 @@ class RigidVisGeom(RBC):
         Whether the rigid entity the vgeom belongs to is built.
         """
         return self.entity.is_built
+
+    @property
+    def is_free(self):
+        """
+        Whether the rigid entity the vgeom belongs to is free.
+        """
+        return self.entity.is_free
 
     # ------------------------------------------------------------------------------------
     # -------------------------------------- repr ----------------------------------------

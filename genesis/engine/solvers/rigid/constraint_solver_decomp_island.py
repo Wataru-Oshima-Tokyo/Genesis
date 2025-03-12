@@ -200,7 +200,7 @@ class ConstraintSolverIsland:
                 if ti.static(self.sparse_solve):
                     self.jac_n_relevant_dofs[n_con, i_b] = con_n_relevant_dofs
 
-                imp, aref = gu.imp_aref(impact.sol_params, -impact.penetration, jac_qvel)
+                imp, aref = gu.imp_aref(impact.sol_params, -impact.penetration, jac_qvel, -impact.penetration)
 
                 diag = t + impact.friction * impact.friction * t
                 diag *= 2 * impact.friction * impact.friction * (1 - imp) / ti.max(imp, gs.EPS)
@@ -239,7 +239,7 @@ class ConstraintSolverIsland:
 
                     jac = side
                     jac_qvel = jac * self._solver.dofs_state[i_d, i_b].vel
-                    imp, aref = gu.imp_aref(self._solver.dofs_info[I_d].sol_params, pos, jac_qvel)
+                    imp, aref = gu.imp_aref(self._solver.dofs_info[I_d].sol_params, pos, jac_qvel, pos)
                     diag = self._solver.dofs_info[I_d].invweight * (pos < 0) * (1 - imp) / (imp + gs.EPS)
                     aref = aref * (pos < 0)
                     if pos < 0:
@@ -486,13 +486,24 @@ class ConstraintSolverIsland:
 
                 self.Mgrad[i_d, i_b] = self.Mgrad[i_d, i_b] / self.nt_H[i_d, i_d, i_b]
 
-    def reset(self):
-        self.jac.fill(0)
-        self.qacc_ws.fill(0)
-        self.meaninertia.fill(1.0)  # TODO: this is not used
+    def reset(self, envs_idx=None):
+        if envs_idx is None:
+            envs_idx = self._solver._scene._envs_idx
+        self._kernel_reset(envs_idx)
 
-        if self.sparse_solve:
-            self.jac_n_relevant_dofs.fill(0)
+    @ti.kernel
+    def _kernel_reset(self, envs_idx: ti.types.ndarray()):
+        ti.loop_config(serialize=self._solver._para_level < gs.PARA_LEVEL.ALL)
+        for i_b_ in range(envs_idx.shape[0]):
+            i_b = envs_idx[i_b_]
+            self.meaninertia[i_b] = 1.0  # TODO: this is not used
+            for i_d in range(self._solver.n_dofs_):
+                self.qacc_ws[i_d, i_b] = 0
+                for i_c in range(self.len_constraints_):
+                    self.jac[i_c, i_d, i_b] = 0
+            if ti.static(self.sparse_solve):
+                for i_c in range(self.len_constraints_):
+                    self.jac_n_relevant_dofs[i_c, i_b] = 0
 
     # def resolve(self):
     #     from genesis.utils.tools import create_timer

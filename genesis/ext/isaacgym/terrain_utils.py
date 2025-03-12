@@ -79,16 +79,22 @@ def random_uniform_terrain(
     y = np.linspace(0, terrain.length * terrain.horizontal_scale, height_field_downsampled.shape[1])
 
     # f = interpolate.interp2d(y, x, height_field_downsampled, kind="linear")
-    f = RegularGridInterpolator((y, x), height_field_downsampled, method="linear")
+    # f = RegularGridInterpolator((y, x), height_field_downsampled, method="linear")
+
+    # x_upsampled = np.linspace(0, terrain.width * terrain.horizontal_scale, terrain.width)
+    # y_upsampled = np.linspace(0, terrain.length * terrain.horizontal_scale, terrain.length)
+    # z_upsampled = np.rint(f(grid_points)).reshape(terrain.width, terrain.length)
+
+    # # z_upsampled = np.rint(f(y_upsampled, x_upsampled))
+    # # Create a grid of points for interpolation
+    # grid_points = np.array(np.meshgrid(y_upsampled, x_upsampled)).T.reshape(-1, 2)
+    f = interpolate.RegularGridInterpolator((y, x), height_field_downsampled, method="linear")
 
     x_upsampled = np.linspace(0, terrain.width * terrain.horizontal_scale, terrain.width)
     y_upsampled = np.linspace(0, terrain.length * terrain.horizontal_scale, terrain.length)
-    # z_upsampled = np.rint(f(y_upsampled, x_upsampled))
-    # Create a grid of points for interpolation
-    grid_points = np.array(np.meshgrid(y_upsampled, x_upsampled)).T.reshape(-1, 2)
+    z_upsampled = np.rint(f((y_upsampled, x_upsampled)))
 
     # Interpolate and reshape back to the terrain size
-    z_upsampled = np.rint(f(grid_points)).reshape(terrain.width, terrain.length)
     terrain.height_field_raw += z_upsampled.astype(np.int16)
     return terrain
 

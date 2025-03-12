@@ -65,17 +65,17 @@ RenderFlags_FLAT = RenderFlags.FLAT
 
 
 @njit
-def str_to_ptr(s):
-    n = len(s)
+def get_uniform_location(pid, name, gl):
+    n = len(name)
     arr = np.zeros(n + 1, np.uint8)
     for i in range(n):
-        arr[i] = ord(s[i])
-    return address_to_ptr(arr.ctypes.data)
+        arr[i] = ord(name[i])
+    return gl.glGetUniformLocation(pid, arr.ctypes.data)
 
 
 @njit
 def set_uniform_matrix_4fv(pid, name, value, gl):
-    loc = gl.glGetUniformLocation(pid, str_to_ptr(name))
+    loc = get_uniform_location(pid, name, gl)
     if loc >= 0:
         gl.glUniformMatrix4fv(loc, 1, GL_TRUE, address_to_ptr(value.ctypes.data))
     else:
@@ -84,7 +84,7 @@ def set_uniform_matrix_4fv(pid, name, value, gl):
 
 @njit
 def set_uniform_1i(pid, name, value, gl):
-    loc = gl.glGetUniformLocation(pid, str_to_ptr(name))
+    loc = get_uniform_location(pid, name, gl)
     if loc >= 0:
         gl.glUniform1i(loc, value)
     else:
@@ -93,7 +93,7 @@ def set_uniform_1i(pid, name, value, gl):
 
 @njit
 def set_uniform_1f(pid, name, value, gl):
-    loc = gl.glGetUniformLocation(pid, str_to_ptr(name))
+    loc = get_uniform_location(pid, name, gl)
     if loc >= 0:
         gl.glUniform1f(loc, value)
     else:
@@ -102,7 +102,7 @@ def set_uniform_1f(pid, name, value, gl):
 
 @njit
 def set_uniform_2f(pid, name, value1, value2, gl):
-    loc = gl.glGetUniformLocation(pid, str_to_ptr(name))
+    loc = get_uniform_location(pid, name, gl)
     if loc >= 0:
         gl.glUniform2f(loc, value1, value2)
     else:
@@ -111,7 +111,7 @@ def set_uniform_2f(pid, name, value1, value2, gl):
 
 @njit
 def set_uniform_3fv(pid, name, value, gl):
-    loc = gl.glGetUniformLocation(pid, str_to_ptr(name))
+    loc = get_uniform_location(pid, name, gl)
     if loc >= 0:
         gl.glUniform3fv(loc, 1, address_to_ptr(value.ctypes.data))
     else:
@@ -120,7 +120,7 @@ def set_uniform_3fv(pid, name, value, gl):
 
 @njit
 def set_uniform_4fv(pid, name, value, gl):
-    loc = gl.glGetUniformLocation(pid, str_to_ptr(name))
+    loc = get_uniform_location(pid, name, gl)
     if loc >= 0:
         gl.glUniform4fv(loc, 1, address_to_ptr(value.ctypes.data))
     else:
@@ -196,9 +196,16 @@ def address_to_ptr(typingctx, src):
 
 class JITRenderer:
     def __init__(self, scene, node_list, primitive_list):
+        self._forward_pass = None
+        self._shadow_mapping_pass = None
+        self._point_shadow_mapping_pass = None
+        self._read_depth_buf = None
+        self._read_color_buf = None
+        self._update_normal_flat = None
+        self._update_normal_smooth = None
+        self._update_buffer = None
         self.set_primitive(scene, node_list, primitive_list)
         self.set_light(scene, scene.light_nodes, scene.ambient_light)
-        self.gen_func_ptr()
         self.reflection_mat = np.identity(4, np.float32)
 
     def update(self, scene):
@@ -287,8 +294,8 @@ class JITRenderer:
         self.pbr_mat = np.zeros((n, 9), np.float32)  # base_color <- 4, metallic <- 1, roughness <- 1, emissive <- 3
         self.spec_mat = np.zeros((n, 11), np.float32)  # diffuse <- 4, specular <- 3, glossiness <- 1, emissive <- 3
         self.render_flags = np.zeros(
-            (n, 6), np.int8
-        )  # (blend, wireframe, double sided, pbr texture, reflective floor, transparent)
+            (n, 7), np.int8
+        )  # (blend, wireframe, double sided, pbr texture, reflective floor, transparent, env shared)
         self.mode = np.zeros(n, np.int32)
         self.n_instances = np.zeros(n, np.int32)
         self.n_indices = np.zeros(n, np.int32)  # positive: indices, negative: positions
@@ -334,6 +341,7 @@ class JITRenderer:
             self.render_flags[i, 3] = isinstance(material, MetallicRoughnessMaterial)
             self.render_flags[i, 4] = primitive.is_floor and not floor_existed
             self.render_flags[i, 5] = node_list[i].mesh.is_transparent
+            self.render_flags[i, 6] = primitive.env_shared
 
             if primitive.is_floor:
                 floor_existed = True
@@ -352,6 +360,9 @@ class JITRenderer:
 
     def gen_func_ptr(self):
         self.gl = GLWrapper()
+
+        IS_OPENGL_42_AVAILABLE = hasattr(self.gl.wrapper_instance, "glDrawElementsInstancedBaseInstance")
+        OPENGL_42_ERROR_MSG = "Seperated env rendering not supported because OpenGL 4.2 not available on this machine."
 
         @njit(
             none(
@@ -377,6 +388,7 @@ class JITRenderer:
                 float32[:, :],
                 int32,
                 float32[:],
+                int32,
                 self.gl.wrapper_type,
             ),
             cache=True,
@@ -404,6 +416,7 @@ class JITRenderer:
             reflection_mat,
             floor_tex,
             screen_size,
+            env_idx,
             gl,
         ):
             det_reflection = np.linalg.det(reflection_mat)
@@ -508,12 +521,22 @@ class JITRenderer:
                         continue
                     set_uniform_3fv(pid, "color", color_list[id], gl)
 
-                if n_indices[id] > 0:
-                    gl.glDrawElementsInstanced(
-                        mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), n_instances[id]
-                    )
+                if render_flags[id, 6] or env_idx == -1:
+                    if n_indices[id] > 0:
+                        gl.glDrawElementsInstanced(
+                            mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), n_instances[id]
+                        )
+                    else:
+                        gl.glDrawArraysInstanced(mode[id], 0, -n_indices[id], n_instances[id])
+                elif IS_OPENGL_42_AVAILABLE:
+                    if n_indices[id] > 0:
+                        gl.glDrawElementsInstancedBaseInstance(
+                            mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), 1, env_idx
+                        )
+                    else:
+                        gl.glDrawArraysInstancedBaseInstance(mode[id], 0, -n_indices[id], 1, env_idx)
                 else:
-                    gl.glDrawArraysInstanced(mode[id], 0, -n_indices[id], n_instances[id])
+                    raise RuntimeError(OPENGL_42_ERROR_MSG)
 
                 gl.glBindVertexArray(0)
             gl.glUseProgram(0)
@@ -530,11 +553,14 @@ class JITRenderer:
                 float32[:, :],
                 float32[:, :],
                 int8[:, :],
+                int32,
                 self.gl.wrapper_type,
             ),
             cache=True,
         )
-        def shadow_mapping_pass(vao_id, program_id, pose, mode, n_instances, n_indices, mat_V, mat_P, render_flags, gl):
+        def shadow_mapping_pass(
+            vao_id, program_id, pose, mode, n_instances, n_indices, mat_V, mat_P, render_flags, env_idx, gl
+        ):
             last_pid = -1
             for id in range(len(vao_id)):
                 if render_flags[id, 5]:
@@ -559,12 +585,22 @@ class JITRenderer:
 
                 gl.glDisable(GL_PROGRAM_POINT_SIZE)
 
-                if n_indices[id] > 0:
-                    gl.glDrawElementsInstanced(
-                        mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), n_instances[id]
-                    )
+                if render_flags[id, 6] or env_idx == -1:
+                    if n_indices[id] > 0:
+                        gl.glDrawElementsInstanced(
+                            mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), n_instances[id]
+                        )
+                    else:
+                        gl.glDrawArraysInstanced(mode[id], 0, -n_indices[id], n_instances[id])
+                elif IS_OPENGL_42_AVAILABLE:
+                    if n_indices[id] > 0:
+                        gl.glDrawElementsInstancedBaseInstance(
+                            mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), 1, env_idx
+                        )
+                    else:
+                        gl.glDrawArraysInstancedBaseInstance(mode[id], 0, -n_indices[id], 1, env_idx)
                 else:
-                    gl.glDrawArraysInstanced(mode[id], 0, -n_indices[id], n_instances[id])
+                    raise RuntimeError(OPENGL_42_ERROR_MSG)
 
                 gl.glBindVertexArray(0)
             gl.glUseProgram(0)
@@ -581,12 +617,13 @@ class JITRenderer:
                 float32[:, :, :],
                 float32[:],
                 int8[:, :],
+                int32,
                 self.gl.wrapper_type,
             ),
             cache=True,
         )
         def point_shadow_mapping_pass(
-            vao_id, program_id, pose, mode, n_instances, n_indices, light_matrix, light_pos, render_flags, gl
+            vao_id, program_id, pose, mode, n_instances, n_indices, light_matrix, light_pos, render_flags, env_idx, gl
         ):
             last_pid = -1
             for id in range(len(vao_id)):
@@ -613,12 +650,22 @@ class JITRenderer:
 
                 gl.glDisable(GL_PROGRAM_POINT_SIZE)
 
-                if n_indices[id] > 0:
-                    gl.glDrawElementsInstanced(
-                        mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), n_instances[id]
-                    )
+                if render_flags[id, 6] or env_idx == -1:
+                    if n_indices[id] > 0:
+                        gl.glDrawElementsInstanced(
+                            mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), n_instances[id]
+                        )
+                    else:
+                        gl.glDrawArraysInstanced(mode[id], 0, -n_indices[id], n_instances[id])
+                elif IS_OPENGL_42_AVAILABLE:
+                    if n_indices[id] > 0:
+                        gl.glDrawElementsInstancedBaseInstance(
+                            mode[id], n_indices[id], GL_UNSIGNED_INT, address_to_ptr(0), 1, env_idx
+                        )
+                    else:
+                        gl.glDrawArraysInstancedBaseInstance(mode[id], 0, -n_indices[id], 1, env_idx)
                 else:
-                    gl.glDrawArraysInstanced(mode[id], 0, -n_indices[id], n_instances[id])
+                    raise RuntimeError(OPENGL_42_ERROR_MSG)
 
                 gl.glBindVertexArray(0)
             gl.glUseProgram(0)
@@ -704,12 +751,14 @@ class JITRenderer:
         color_list=None,
         reflection_mat=np.identity(4, np.float32),
         floor_tex=0,
+        env_idx=-1,
     ):
         self.load_programs(renderer, flags, program_flags)
-        func = self._forward_pass
+        if self._forward_pass is None:
+            self.gen_func_ptr()
         # timer = time()
         if flags & RenderFlags.SEG:
-            func(
+            self._forward_pass(
                 self.vao_id,
                 self.program_id[(flags, program_flags)],
                 self.pose,
@@ -732,10 +781,11 @@ class JITRenderer:
                 reflection_mat,
                 floor_tex,
                 screen_size,
+                env_idx,
                 self.gl.wrapper_instance,
             )
         else:
-            func(
+            self._forward_pass(
                 self.vao_id,
                 self.program_id[(flags, program_flags)],
                 self.pose,
@@ -758,14 +808,16 @@ class JITRenderer:
                 reflection_mat,
                 floor_tex,
                 screen_size,
+                env_idx,
                 self.gl.wrapper_instance,
             )
         # print(100.0/(time()-timer))
 
-    def shadow_mapping_pass(self, renderer, V, P, flags, program_flags):
+    def shadow_mapping_pass(self, renderer, V, P, flags, program_flags, env_idx=-1):
         self.load_programs(renderer, flags, program_flags)
-        func = self._shadow_mapping_pass
-        func(
+        if self._shadow_mapping_pass is None:
+            self.gen_func_ptr()
+        self._shadow_mapping_pass(
             self.vao_id,
             self.program_id[(flags, program_flags)],
             self.pose,
@@ -775,13 +827,15 @@ class JITRenderer:
             V.astype(np.float32),
             P.astype(np.float32),
             self.render_flags,
+            env_idx,
             self.gl.wrapper_instance,
         )
 
-    def point_shadow_mapping_pass(self, renderer, light_matrix, light_pos, flags, program_flags):
+    def point_shadow_mapping_pass(self, renderer, light_matrix, light_pos, flags, program_flags, env_idx=-1):
         self.load_programs(renderer, flags, program_flags)
-        func = self._point_shadow_mapping_pass
-        func(
+        if self._point_shadow_mapping_pass is None:
+            self.gen_func_ptr()
+        self._point_shadow_mapping_pass(
             self.vao_id,
             self.program_id[(flags, program_flags)],
             self.pose,
@@ -791,6 +845,7 @@ class JITRenderer:
             light_matrix.astype(np.float32),
             light_pos.astype(np.float32),
             self.render_flags,
+            env_idx,
             self.gl.wrapper_instance,
         )
 
@@ -799,25 +854,35 @@ class JITRenderer:
         if primitive.normals is None:
             return None
         if primitive.indices is not None:
+            if self._update_normal_smooth is None:
+                self.gen_func_ptr()
             return self._update_normal_smooth(vertices, primitive.indices)
         else:
+            if self._update_normal_flat is None:
+                self.gen_func_ptr()
             return self._update_normal_flat(vertices.reshape((-1, 3, 3)))
 
     def update_buffer(self, buffer_updates):
         updates = np.zeros((len(buffer_updates), 3), dtype=np.int64)
         flattened_list = []
         for idx, (id, data) in enumerate(buffer_updates.items()):
-            flattened = np.ascontiguousarray(data.flatten().astype(np.float32))
+            flattened = data.astype(np.float32, order="C", copy=False).reshape((-1,))
             flattened_list.append(flattened)
 
             updates[idx, 0] = id
             updates[idx, 1] = 4 * len(flattened)
             updates[idx, 2] = flattened.ctypes.data
 
+        if self._update_buffer is None:
+            self.gen_func_ptr()
         self._update_buffer(updates, self.gl.wrapper_instance)
 
     def read_depth_buf(self, weight, height, z_near, z_far):
+        if self._read_depth_buf is None:
+            self.gen_func_ptr()
         return self._read_depth_buf(weight, height, z_near, z_far, self.gl.wrapper_instance)
 
     def read_color_buf(self, weight, height, rgba):
+        if self._read_color_buf is None:
+            self.gen_func_ptr()
         return self._read_color_buf(weight, height, rgba, self.gl.wrapper_instance)

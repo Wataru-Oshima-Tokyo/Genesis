@@ -49,7 +49,7 @@ def _order_links(l_infos, j_infos, links_g_info=None):
     if links_g_info is not None:
         links_g_info = [links_g_info[i] for i in ordered_links_idx]
 
-    return new_l_infos, new_j_infos, links_g_info
+    return new_l_infos, new_j_infos, links_g_info, ordered_links_idx
 
 
 def parse_urdf(morph, surface):
@@ -128,7 +128,8 @@ def parse_urdf(morph, surface):
                         "pos": geom.origin[:3, 3].copy(),
                         "quat": gu.R_to_quat(geom.origin[:3, :3]),
                         "mesh": mesh,
-                        "is_col": geom_is_col,
+                        "contype": geom_is_col,
+                        "conaffinity": geom_is_col,
                     }
                     l_info["g_infos"].append(g_info)
             else:
@@ -170,7 +171,8 @@ def parse_urdf(morph, surface):
                     "pos": geom.origin[:3, 3],
                     "quat": gu.R_to_quat(geom.origin[:3, :3]),
                     "mesh": mesh,
-                    "is_col": geom_is_col,
+                    "contype": geom_is_col,
+                    "conaffinity": geom_is_col,
                 }
                 l_info["g_infos"].append(g_info)
 
@@ -287,7 +289,7 @@ def parse_urdf(morph, surface):
                     j_info["dofs_force_range"] / np.abs(j_info["dofs_force_range"]) * joint.limit.effort
                 )
 
-    l_infos, j_infos, _ = _order_links(l_infos, j_infos)
+    l_infos, j_infos, _, _ = _order_links(l_infos, j_infos)
     ######################### first joint and base link #########################
     j_info = j_infos[0]
     l_info = l_infos[0]

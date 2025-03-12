@@ -40,7 +40,8 @@ class Morph(Options):
         Whether the entity needs to be considered for collision checking. Defaults to True. `visualization` and `collision` cannot both be False. **This is only used for RigidEntity.**
     requires_jac_and_IK : bool, optional
         Whether this morph, if created as `RigidEntity`, requires jacobian and inverse kinematics. Defaults to False. **This is only used for RigidEntity.**
-
+    is_free : bool, optional
+        Whether the entity is free to move. Defaults to True. **This is only used for RigidEntity.**
     """
 
     pos: tuple = (0.0, 0.0, 0.0)
@@ -49,6 +50,7 @@ class Morph(Options):
     visualization: bool = True
     collision: bool = True
     requires_jac_and_IK: bool = False
+    is_free: bool = True
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -640,8 +642,13 @@ class Terrain(Morph):
         The types of subterrains to generate. If a string, it will be repeated for all subterrains. If a 2D list, it should have the same shape as `n_subterrains`.
     height_field : array-like, optional
         The height field to generate the terrain. If specified, all other configurations will be ignored. Defaults to None.
+    name : str, optional
+        The name of the terrain to save
+    from_stored : str, optional
+        The path of the stored terrain to load
     """
 
+    is_free: bool = False
     randomize: bool = False  # whether to randomize the terrain
     n_subterrains: Tuple[int, int] = (3, 3)  # number of subterrains in x and y directions
     subterrain_size: Tuple[float, float] = (12.0, 12.0)  # meter
@@ -653,6 +660,8 @@ class Terrain(Morph):
         ["random_uniform_terrain", "pyramid_stairs_terrain", "pyramid_down_stairs_terrain", "pyramid_steep_down_stairs_terrain", "sloped_terrain"],
     ]
     height_field: Any = None
+    name: str = "default"  # name to store and reuse the terrain
+    from_stored: Any = None
 
     def __init__(self, **data):
         super().__init__(**data)

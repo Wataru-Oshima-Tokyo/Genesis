@@ -3,7 +3,7 @@ DEFAULT_Z_FAR = 100.0  # Far clipping plane, in meters
 DEFAULT_SCENE_SCALE = 5.0  # Default scene scale
 MAX_N_LIGHTS = 4  # Maximum number of lights of each type allowed
 TARGET_OPEN_GL_MAJOR = 4  # Target OpenGL Major Version
-TARGET_OPEN_GL_MINOR = 1  # Target OpenGL Minor Version
+TARGET_OPEN_GL_MINOR = 2  # Target OpenGL Minor Version
 MIN_OPEN_GL_MAJOR = 3  # Minimum OpenGL Major Version
 MIN_OPEN_GL_MINOR = 3  # Minimum OpenGL Minor Version
 FLOAT_SZ = 4  # Byte size of GL float32
@@ -61,6 +61,8 @@ class RenderFlags(object):
     SKIP_FLOOR = 1 << 15
     """Skip the floor"""
     REFLECTIVE_FLOOR = 1 << 16
+    """Render the reflection of floor"""
+    ENV_SEPARATE = 1 << 17
     """Render the reflection of floor"""
 
 
