@@ -9,10 +9,10 @@
       <joint axis="0 1 0" damping="0.1" armature="0.01" frictionloss="0.2" />
       <motor ctrlrange="-23.7 23.7" />
       <default class="abduction">
-        <joint axis="1 0 0" damping="1" range="-0.863 0.863"/>
+        <joint axis="1 0 0" damping="1" range="-1.047 1.047"/>
       </default>
       <default class="hip">
-        <joint range="-0.686 4.501"/>
+        <joint range="-0.663 2.966"/>
       </default>
       <default class="knee">
         <joint range="-2.818 -0.888"/>
