@@ -61,7 +61,9 @@ def get_train_cfg(exp_name, max_iterations):
 def get_cfgs():
     env_cfg = {
         "num_actions": 12,
-        "robot_mjcf": "xml/go1/go1.xml",
+        "use_mjcf": True,
+        "robot_description": "xml/go1/go1.xml",
+        # "robot_description": "urdf/go1/urdf/go1.urdf",
         # joint/link names
         'links_to_keep': ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot',],
         "default_joint_angles": {  # [rad]
@@ -104,10 +106,10 @@ def get_cfgs():
                         'thigh':  23.7,
                         'calf':   23.7},
         # termination
-        'termination_contact_link_names': ['trunk'],
-        'penalized_contact_link_names': ['trunk', 'thigh', 'calf'],
+        'termination_contact_link_names': ['base'],
+        'penalized_contact_link_names': ['base', 'thigh', 'calf'],
         'feet_link_names': ['foot'],
-        'base_link_name': ['trunk'], 
+        'base_link_name': ['base'], 
         "hip_joint_names": [
             # "FL_hip_joint",
             # "FR_hip_joint",
@@ -134,12 +136,12 @@ def get_cfgs():
         'max_push_vel_xy': 1.0,
         # domain randomization
         'randomize_delay': True,
-        'delay_range': [0.0, 0.3], #seconds        
+        'delay_range': [0.015, 0.05], #seconds        
         'randomize_friction': True,
         'friction_range': [0.1, 1.5],
         'randomize_base_mass': True,
-        'added_mass_range': [-1., 1.],
-        'randomize_com_displacement': False,
+        'added_mass_range': [-1., 3.],
+        'randomize_com_displacement': True,
         'com_displacement_range': [-0.01, 0.01],
         'randomize_motor_strength': False,
         'motor_strength_range': [0.9, 1.1],
@@ -149,6 +151,10 @@ def get_cfgs():
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
+        "randomize_rot": True,
+        "pitch_range": [-40, 40],  # degrees
+        "roll_range": [-70, 70],
+        "yaw_range": [-180, 180],
     }
     obs_cfg = {
         "num_obs": 53,
@@ -181,18 +187,18 @@ def get_cfgs():
             "base_height": -50.0, # -30.0
             "orientation": -1.0, #-30.0
             "ang_vel_xy": -0.05,
-            "collision": -2.0,
-            "action_rate": -0.1,
-            "contact_no_vel": -0.02,
+            "collision": -5.0,
+            # "action_rate": -0.1,
+            "contact_no_vel": -0.002,
             "dof_acc": -2.5e-7,
             "hip_pos": -.1, #-1.0
-            "contact": 0.1,
-            "dof_pos_limits": -10.0,
+            "contact": 0.01,
+            "dof_pos_limits": -3.0,
             'torques': -0.00002,
             "termination": -30.0,
-            "feet_air_time": -1.0,
+            # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
-            "front_feet_swing_height_from_world": -10.0, #-10.0
+            # "front_feet_swing_height_from_world": -10.0, #-10.0
             "feet_contact_forces": -0.1,
             # "rear_feet_swing_height": -0.1, #-10.0
         },

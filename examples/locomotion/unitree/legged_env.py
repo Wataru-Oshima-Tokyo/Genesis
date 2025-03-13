@@ -11,6 +11,39 @@ import copy
 def gs_rand_float(lower, upper, shape, device):
     return (upper - lower) * torch.rand(size=shape, device=device) + lower
 
+# Helper function to get quaternion from Euler angles
+def quaternion_from_euler_tensor(roll_deg, pitch_deg, yaw_deg):
+    """
+    roll_deg, pitch_deg, yaw_deg: (N,) PyTorch tensors of angles in degrees.
+    Returns a (N, 4) PyTorch tensor of quaternions in [x, y, z, w] format.
+    """
+    # Convert to radians
+    roll_rad = torch.deg2rad(roll_deg)
+    pitch_rad = torch.deg2rad(pitch_deg)
+    yaw_rad = torch.deg2rad(yaw_deg)
+
+    # Half angles
+    half_r = roll_rad * 0.5
+    half_p = pitch_rad * 0.5
+    half_y = yaw_rad * 0.5
+
+    # Precompute sines/cosines
+    cr = half_r.cos()
+    sr = half_r.sin()
+    cp = half_p.cos()
+    sp = half_p.sin()
+    cy = half_y.cos()
+    sy = half_y.sin()
+
+    # Quaternion formula (XYZW)
+    # Note: This is the standard euler->quat for 'xyz' rotation convention.
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    qw = cr * cp * cy + sr * sp * sy
+
+    # Stack into (N,4)
+    return torch.stack([qx, qy, qz, qw], dim=-1)
 
 class LeggedEnv:
     def __init__(self, num_envs, env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, terrain_cfg, show_viewer=False, device="cuda"):
@@ -165,14 +198,24 @@ class LeggedEnv:
         self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=self.device)
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
         self.inv_base_init_quat = inv_quat(self.base_init_quat)
-        self.robot  = self.scene.add_entity(
-            gs.morphs.MJCF(
-            file=self.env_cfg["robot_mjcf"],
-            pos=self.base_init_pos.cpu().numpy(),
-            quat=self.base_init_quat.cpu().numpy(),
-            ),
-        )
-
+        if self.env_cfg["use_mjcf"]:
+            self.robot  = self.scene.add_entity(
+                gs.morphs.MJCF(
+                file=self.env_cfg["robot_description"],
+                pos=self.base_init_pos.cpu().numpy(),
+                quat=self.base_init_quat.cpu().numpy(),
+                ),
+            )
+        else:
+            self.robot = self.scene.add_entity(
+                gs.morphs.URDF(
+                    file=self.env_cfg["robot_description"],
+                    merge_fixed_links=True,
+                    links_to_keep=self.env_cfg['links_to_keep'],
+                    pos=self.base_init_pos.cpu().numpy(),
+                    quat=self.base_init_quat.cpu().numpy(),
+                ),
+            )
         self.envs_origins = torch.zeros((self.num_envs, 7), device=self.device)
 
         # build
@@ -207,7 +250,7 @@ class LeggedEnv:
             self.env_cfg['base_link_name']
         )
         print(f"motor dofs {self.motor_dofs}")
-        print(self.feet_indices)
+        print(f"feet indicies {self.feet_indices}")
         # PD control
         stiffness = self.env_cfg['PD_stiffness']
         damping = self.env_cfg['PD_damping']
@@ -254,6 +297,7 @@ class LeggedEnv:
         if self.termination_if_roll_greater_than_value <= 1e-6 or self.termination_if_pitch_greater_than_value <= 1e-6:
             self.termination_exceed_degree_ignored = True
 
+        print("Robot links")
         for link in self.robot._links:
             print(link.name)
         
@@ -872,10 +916,32 @@ class LeggedEnv:
         else:
             self.base_pos[envs_idx] = self.random_pos[0] + self.base_init_pos
 
-        self.base_quat[envs_idx] = self.base_init_quat.reshape(1, -1)
         self.robot.set_pos(self.base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
+
+        if self.env_cfg["randomize_rot"]:
+            # 1) Get random roll, pitch, yaw (in degrees) for each environment.
+            roll = gs_rand_float(*self.env_cfg["roll_range"],  (len(envs_idx),), self.device)
+            pitch = gs_rand_float(*self.env_cfg["pitch_range"], (len(envs_idx),), self.device)
+            yaw = gs_rand_float(*self.env_cfg["yaw_range"],    (len(envs_idx),), self.device)
+
+            # 2) Convert them all at once into a (N,4) quaternion tensor [x, y, z, w].
+            quats_torch = quaternion_from_euler_tensor(roll, pitch, yaw)  # (N, 4)
+
+            # 3) Move to CPU if needed and assign into self.base_quat in one shot
+            #    (assuming self.base_quat is a numpy array of shape [num_envs, 4]).
+            self.base_quat[envs_idx] = quats_torch
+        else:
+            self.base_quat[envs_idx] = self.base_init_quat.reshape(1, -1)
+
         self.robot.set_quat(self.base_quat[envs_idx], zero_velocity=False, envs_idx=envs_idx)
 
+        if self.env_cfg["randomize_delay"]:
+            self.motor_delay_steps[envs_idx] = torch.randint(
+                int(self.min_delay / self.dt),
+                self.max_delay_steps + 1,
+                (len(envs_idx), self.num_actions),
+                device=self.device
+            )
         # 1a. Check right after setting position
         if torch.isnan(self.base_pos[envs_idx]).any():
             print("NaN in base_pos right after setting it in reset_idx()")

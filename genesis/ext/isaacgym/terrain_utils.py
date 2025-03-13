@@ -7,8 +7,8 @@
 
 
 import numpy as np
-# from scipy import interpolate
-from scipy.interpolate import RegularGridInterpolator
+from scipy import interpolate
+# from scipy.interpolate import RegularGridInterpolator
 
 
 def fractal_terrain(terrain, levels=8, scale=1.0):
