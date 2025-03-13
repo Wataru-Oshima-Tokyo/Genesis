@@ -102,9 +102,9 @@ def get_cfgs():
         'PD_damping': {'hip':    0.5,
                         'thigh': 0.5,
                         'calf':  0.5},
-        'force_limit': {'hip':    23.7,
-                        'thigh':  23.7,
-                        'calf':   23.7},
+        'force_limit': {'hip':    23.5,
+                        'thigh':  23.5,
+                        'calf':   35.5},
         # termination
         'termination_contact_link_names': ['base'],
         'penalized_contact_link_names': ['base', 'thigh', 'calf'],
@@ -121,7 +121,7 @@ def get_cfgs():
         "termination_if_height_lower_than": -20,
         "termination_duration": 0.002, #seconds
         # base pose
-        "base_init_pos": [0.0, 0.0, 0.5],
+        "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
         "episode_length_s": 20.0,
         "resampling_time_s": 4.0,
@@ -171,8 +171,8 @@ def get_cfgs():
     reward_cfg = {
         "tracking_sigma": 0.25,
         "base_height_target": 0.28,
-        "step_period": 0.8,
-        "step_offset": 0.5,
+        "step_period": 0.5, #0.8
+        "step_offset": 0.2, #0.5
         "front_feet_relative_height_from_base": 0.1,
         "front_feet_relative_height_from_world": 0.2,
         "rear_feet_relative_height_from_base": 0.15,
