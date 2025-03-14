@@ -72,15 +72,15 @@ def get_cfgs():
             "RL_hip_joint": 0.1,
             "RR_hip_joint": -0.1,
 
-            "FL_thigh_joint": 0.5,
-            "FR_thigh_joint": 0.5,
-            "RL_thigh_joint": 1.1,
-            "RR_thigh_joint": 1.1,
+            "FL_thigh_joint": 0.8,
+            "FR_thigh_joint": 0.8,
+            "RL_thigh_joint": 1.0,
+            "RR_thigh_joint": 1.0,
 
-            "FL_calf_joint": -1.7,
-            "FR_calf_joint": -1.7,
-            "RL_calf_joint": -1.6,
-            "RR_calf_joint": -1.6,
+            "FL_calf_joint": -1.5,
+            "FR_calf_joint": -1.5,
+            "RL_calf_joint": -1.5,
+            "RR_calf_joint": -1.5,
         },
         "dof_names": [
             "FL_hip_joint",
@@ -170,11 +170,11 @@ def get_cfgs():
 
     reward_cfg = {
         "tracking_sigma": 0.25,
-        "base_height_target": 0.25,
+        "base_height_target": 0.32,
         "step_period": 0.5, #0.8
         "step_offset": 0.2, #0.5
         "front_feet_relative_height_from_base": 0.1,
-        "front_feet_relative_height_from_world": 0.2,
+        "front_feet_relative_height_from_world": 0.05,
         "rear_feet_relative_height_from_base": 0.15,
         "soft_dof_pos_limit": 0.9,
         "soft_torque_limit": 1.0,
@@ -198,7 +198,7 @@ def get_cfgs():
             "termination": -30.0,
             # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
-            # "front_feet_swing_height_from_world": -10.0, #-10.0
+            "front_feet_swing_height_from_world": -10.0, #-10.0
             "feet_contact_forces": -0.1,
             # "rear_feet_swing_height": -0.1, #-10.0
         },

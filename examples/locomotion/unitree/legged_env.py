@@ -443,9 +443,20 @@ class LeggedEnv:
         random_signs = torch.randint(0, 2, self.commands[envs_idx].shape, device=self.device) * 2 - 1
         self.commands[envs_idx] *= random_signs
 
+    def biased_sample(self, min_val, max_val, size, device, bias=2.0):
+        """
+        Sample values with bias towards positive range.
+        The bias parameter skews values towards the upper end.
+        """
+        uniform_samples = torch.rand(size, device=device)  # [0, 1] uniform
+        skewed_samples = uniform_samples ** (1.0 / bias)  # Biasing towards 1
+        return min_val + (max_val - min_val) * skewed_samples
 
     def _resample_commands(self, envs_idx):
-        self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
+        # self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
+        self.commands[envs_idx, 0] = self.biased_sample(
+            *self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device, bias=2.0
+        )
         self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["lin_vel_y_range"], (len(envs_idx),), self.device)
         self.commands[envs_idx, 2] = gs_rand_float(*self.command_cfg["ang_vel_range"], (len(envs_idx),), self.device)
 
