@@ -6,8 +6,9 @@ Author: Matthew Matl
 import sys
 from time import time
 
-import numpy as np
 import PIL
+import pyglet
+import numpy as np
 from OpenGL.GL import *
 import matplotlib.pyplot as plt
 
@@ -52,6 +53,10 @@ class Renderer(object):
 
     def __init__(self, viewport_width, viewport_height, jit, point_size=1.0):
         self.dpscale = 1
+
+        # Scaling needed on retina displays for old pyglet releases
+        if sys.platform == "darwin" and pyglet.version < "2.0":
+            self.dpscale = 2
 
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
@@ -393,18 +398,27 @@ class Renderer(object):
         # Free meshes
         for mesh in self._meshes:
             for p in mesh.primitives:
-                p.delete()
+                try:
+                    p.delete()
+                except OpenGL.error.GLError:
+                    pass
+        self._meshes.clear()
 
         # Free textures
         for mesh_texture in self._mesh_textures:
-            mesh_texture.delete()
+            try:
+                mesh_texture.delete()
+            except OpenGL.error.GLError:
+                pass
+        self._mesh_textures.clear()
 
         for shadow_texture in self._shadow_textures:
-            shadow_texture.delete()
+            try:
+                shadow_texture.delete()
+            except OpenGL.error.GLError:
+                pass
+        self._shadow_textures.clear()
 
-        self._meshes = set()
-        self._mesh_textures = set()
-        self._shadow_textures = set()
         self._texture_alloc_idx = 0
 
         self._delete_main_framebuffer()
