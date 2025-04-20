@@ -183,8 +183,8 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -5.0, #-5.0
-            "base_height": -50.0, # -30.0
+            "lin_vel_z": -1.0, #-5.0
+            "base_height": -30.0, # -30.0
             "orientation": -1.0, #-30.0
             "ang_vel_xy": -0.05,
             "collision": -5.0,
@@ -198,7 +198,7 @@ def get_cfgs():
             "termination": -30.0,
             # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
-            "front_feet_swing_height_from_world": -10.0, #-10.0
+            # "front_feet_swing_height_from_world": -10.0, #-10.0
             "feet_contact_forces": -0.1,
             # "rear_feet_swing_height": -0.1, #-10.0
         },
@@ -222,7 +222,7 @@ def get_cfgs():
 
     }
     terrain_cfg = {
-        "terrain_type": "plane", #plane
+        "terrain_type": "trimesh", #plane
         "subterrain_size": 12.0,
         "horizontal_scale": 0.25,
         "vertical_scale": 0.005,
