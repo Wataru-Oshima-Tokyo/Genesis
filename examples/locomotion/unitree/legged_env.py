@@ -100,7 +100,7 @@ class LeggedEnv:
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=40,
             ),
-            vis_options=gs.options.VisOptions(n_rendered_envs=1),
+            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(1))),
             rigid_options=gs.options.RigidOptions(
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
@@ -761,6 +761,7 @@ class LeggedEnv:
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
+                self.torques * self.obs_scales["torques"],  # 12 ← NEW
                 self.actions,  # 12
                 sin_phase, #4
                 cos_phase #4
@@ -776,6 +777,7 @@ class LeggedEnv:
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
+                self.torques * self.obs_scales["torques"],           # 12 ← NEW
                 self.actions,  # 12
                 sin_phase, #4
                 cos_phase #4
@@ -860,8 +862,9 @@ class LeggedEnv:
         noise_vec[6:9] = 0. # commands
         noise_vec[9:9+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
         noise_vec[9+self.num_actions:9+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
-        noise_vec[9+2*self.num_actions:9+3*self.num_actions] = 0. # previous actions
-        noise_vec[9+3*self.num_actions:9+3*self.num_actions+8] = 0. # sin/cos phase
+        noise_vec[9+2*self.num_actions:9+3*self.num_actions] = self.noise_scales["torques"] * noise_level * self.obs_scales["torques"]
+        noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
+        noise_vec[9+4*self.num_actions:9+4*self.num_actions+8] = 0. # sin/cos phase
         return noise_vec
 
 

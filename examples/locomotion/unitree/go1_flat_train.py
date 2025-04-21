@@ -151,19 +151,20 @@ def get_cfgs():
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": True,
+        "randomize_rot": False,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-180, 180],
     }
     obs_cfg = {
-        "num_obs": 53,
-        "num_privileged_obs": 56,
+        "num_obs": 65,
+        "num_privileged_obs": 68,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
             "dof_pos": 1.0,
             "dof_vel": 0.05,
+            "torques": 0.03,
         },
         "clip_observations":100,
     }
@@ -218,6 +219,7 @@ def get_cfgs():
             "lin_vel": 0.1,
             "ang_vel": 0.2,
             "gravity": 0.05,
+            "torques": 0.5,
         }
 
     }

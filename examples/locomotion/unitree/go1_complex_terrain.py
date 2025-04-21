@@ -230,11 +230,12 @@ def get_cfgs():
         "rows": 5,   #should be more than 5
         "selected_terrains":{
             "flat_terrain" : {"probability": .1},
-            "random_uniform_terrain" : {"probability": 0.5},
+            # "custom_terrain" : {"probability": 100.5},
+            "random_uniform_terrain" : {"probability": 0.6},
             "pyramid_sloped_terrain" : {"probability": 0.1},
-            "discrete_obstacles_terrain" : {"probability": 0.5},
-            "pyramid_stairs_terrain" : {"probability": 0.0},
-            "wave_terrain": {"probability": 0.5},
+            "discrete_obstacles_terrain" : {"probability": 0.01},
+            "pyramid_stairs_terrain" : {"probability": 0.1},
+            "wave_terrain": {"probability": 0.1},
 
         }
     }
