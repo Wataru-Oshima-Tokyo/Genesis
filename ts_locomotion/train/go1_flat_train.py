@@ -65,6 +65,7 @@ def get_cfgs():
         "robot_description": "xml/go1/go1.xml",
         # "robot_description": "urdf/go1/urdf/go1.urdf",
         # joint/link names
+        # joint/link names
         'links_to_keep': ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot',],
         "default_joint_angles": {  # [rad]
             "FL_hip_joint": 0.1,
@@ -116,10 +117,10 @@ def get_cfgs():
             "RL_hip_joint",
             "RR_hip_joint",            
         ],
-        "termination_if_roll_greater_than": 170,  # degree. 
-        "termination_if_pitch_greater_than": 170,
-        "termination_if_height_lower_than": -20,
-        "termination_duration": 0.002, #seconds
+        "termination_if_roll_greater_than": 0,  # degree. 
+        "termination_if_pitch_greater_than": 0,
+        "termination_if_height_lower_than": -40,
+        "termination_duration": 0.1, #seconds
         # base pose
         "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
@@ -129,35 +130,35 @@ def get_cfgs():
         "simulate_action_latency": True,
         'send_timeouts': True,
         "clip_actions": 100.0,
-        'control_freq': 50,
+        'control_freq': 40,
         'decimation': 4,
         # random push
         'push_interval_s': 5,
         'max_push_vel_xy': 1.0,
         # domain randomization
         'randomize_delay': True,
-        'delay_range': [0.015, 0.05], #seconds        
+        'delay_range': [0.015, 0.03], #seconds        
         'randomize_friction': True,
         'friction_range': [0.1, 1.5],
         'randomize_base_mass': True,
         'added_mass_range': [-1., 3.],
         'randomize_com_displacement': True,
         'com_displacement_range': [-0.01, 0.01],
-        'randomize_motor_strength': False,
+        'randomize_motor_strength': True,
         'motor_strength_range': [0.9, 1.1],
-        'randomize_motor_offset': False,
+        'randomize_motor_offset': True,
         'motor_offset_range': [-0.02, 0.02],
         'randomize_kp_scale': False,
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": False,
+        "randomize_rot": True,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-180, 180],
     }
     obs_cfg = {
-        "num_obs": 65,
+        "num_obs": 42,
         "num_privileged_obs": 68,
         "obs_scales": {
             "lin_vel": 2.0,
@@ -184,11 +185,11 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -5.0, #-5.0
-            "base_height": -50.0, # -30.0
-            "orientation": -1.0, #-30.0
+            "lin_vel_z": -10.0, #-5.0
+            "base_height": -30.0, # -30.0
+            "orientation": -30.0,
             "ang_vel_xy": -0.05,
-            "collision": -5.0,
+            "collision": -2.0,
             # "action_rate": -0.1,
             "contact_no_vel": -0.002,
             "dof_acc": -2.5e-7,
@@ -200,7 +201,7 @@ def get_cfgs():
             # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
             "front_feet_swing_height_from_world": -10.0, #-10.0
-            "feet_contact_forces": -0.1,
+            # "feet_contact_forces": -0.1,
             # "rear_feet_swing_height": -0.1, #-10.0
         },
     }
@@ -221,23 +222,23 @@ def get_cfgs():
             "gravity": 0.05,
             "torques": 0.5,
         }
-
     }
     terrain_cfg = {
         "terrain_type": "plane", #plane
-        "subterrain_size": 12.0,
-        "horizontal_scale": 0.25,
+        "subterrain_size": 4.0,
+        "horizontal_scale": 0.05,
         "vertical_scale": 0.005,
-        "cols": 5,  #should be more than 5
-        "rows": 5,   #should be more than 5
+        "cols": 6,  #should be more than 5
+        "rows": 6,   #should be more than 5
         "selected_terrains":{
-            "flat_terrain" : {"probability": .1},
-            "random_uniform_terrain" : {"probability": 0.5},
+            "flat_terrain" : {"probability": 0.1},
+            "stamble_terrain" : {"probability": 0.3},
             "pyramid_sloped_terrain" : {"probability": 0.1},
-            "discrete_obstacles_terrain" : {"probability": 0.5},
-            "pyramid_stairs_terrain" : {"probability": 0.0},
-            "wave_terrain": {"probability": 0.5},
-
+            # "random_uniform_terrain" : {"probability": 0.1},
+            # "fractal_terrain" : {"probability": 0.1},
+            "pyramid_stairs_terrain" : {"probability": 0.5},
+            "wave_terrain": {"probability": 0.1},
+            "pyramid_steep_down_stairs_terrain" : {"probability": .5},
         }
     }
 
