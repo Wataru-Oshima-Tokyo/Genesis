@@ -443,6 +443,7 @@ class LeggedEnv:
             dtype=gs.tc_int, 
         )
         self.extras = dict()  # extra information for logging
+        self.extras["observations"] = dict()
 
 
 
@@ -696,8 +697,9 @@ class LeggedEnv:
         self.compute_observations()
 
         self._render_headless()
+        self.extras["observations"]["critic"] = self.privileged_obs_buf
 
-        return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
+        return self.obs_buf, self.rew_buf, self.reset_buf, self.extras
 
 
     def compute_observations(self):
@@ -762,7 +764,9 @@ class LeggedEnv:
 
 
     def get_observations(self):
-        return self.obs_buf
+        self.extras["observations"]["critic"] = self.privileged_obs_buf
+
+        return self.obs_buf, self.extras
 
     def get_privileged_observations(self):
         return self.privileged_obs_buf
