@@ -9,12 +9,13 @@ from rsl_rl.runners import OnPolicyRunner
 import genesis as gs
 from datetime import datetime
 import re
-import wandb
+# import wandb
 
 def get_train_cfg(exp_name, max_iterations):
 
     train_cfg_dict = {
         "algorithm": {
+            "class_name": "PPO",
             "clip_param": 0.2,
             "desired_kl": 0.01,
             "entropy_coef": 0.01,
@@ -34,24 +35,22 @@ def get_train_cfg(exp_name, max_iterations):
             "actor_hidden_dims": [512, 256, 128],
             "critic_hidden_dims": [512, 256, 128],
             "init_noise_std": 1.0,
+            "class_name": "ActorCritic",
         },
         "runner": {
-            "algorithm_class_name": "PPO",
             "checkpoint": -1,
             "experiment_name": exp_name,
             "load_run": -1,
             "log_interval": 1,
             "max_iterations": max_iterations,
-            "num_steps_per_env": 24,
-            "policy_class_name": "ActorCritic",
-            "record_interval": 50,
             "resume": False,
             "resume_path": None,
             "run_name": "",
-            "runner_class_name": "runner_class_name",
-            "save_interval": 100,
         },
         "runner_class_name": "OnPolicyRunner",
+        "num_steps_per_env": 24,
+        "save_interval": 50,
+        "empirical_normalization": None,
         "seed": 1,
     }
 
@@ -174,7 +173,7 @@ def get_cfgs():
     reward_cfg = {
         "tracking_sigma": 0.25,
         "base_height_target": 0.35,
-        "relative_base_height_target": 0.32,
+        "relative_base_height_target": 0.35,
         "step_period": 0.5, #0.8
         "step_offset": 0.2, #0.5
         "front_feet_relative_height_from_base": 0.1,
@@ -187,24 +186,25 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -0.001, #-5.0
-            "relative_base_height": -5.0, #-5.0
-            "orientation": -0.001, #-30.0
+            "lin_vel_z": -0.00001, #-5.0
+            "relative_base_height": -5.0, # -30.0
+            # "base_height": -5.0, # -30.0
+            "orientation": -0.01, #-30.0
             "ang_vel_xy": -0.05,
             "collision": -0.5,
             # "action_rate": -0.1,
             "contact_no_vel": -0.002,
-            "dof_acc": -2.5e-6,
-            # "hip_pos": -.1, #-1.0
+            "dof_acc": -2.5e-7,
+            # "hip_pos": -.01, #-1.0
             "contact": 0.01,
             "dof_pos_limits": -3.0,
-            "dof_vel": -1.0e-3
-            'torques': -0.00002,
+            "dof_vel": -1.0e-3,
+            'torques': -0.00005,
             "termination": -30.0,
             # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
             # "front_feet_swing_height_from_world": -10.0, #-10.0
-            # "feet_contact_forces": -0.01,
+            "feet_contact_forces": -0.1,
             # "rear_feet_swing_height": -0.1, #-10.0
         },
     }
@@ -256,7 +256,7 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
-    parser.add_argument("--offline", action="store_true", help="If you do not want to upload online via wandb")
+    parser.add_argument("--wandb_username", type=str, default="go1_walking")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
@@ -305,14 +305,20 @@ def main():
     if args.resume:
         runner.load(resume_path)
 
-
-    wandb.init(project='custom_genesis', name=args.exp_name, dir=log_dir, mode='offline' if args.offline else 'online')
+    wand_project_name = 'ts_genesis'
+    # wandb.init(project=wand_project_name, name=args.exp_name, dir=log_dir, mode='offline' if args.offline else 'online')
 
     pickle.dump(
         [env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, train_cfg, terrain_cfg],
         open(f"{log_dir}/cfgs.pkl", "wb"),
     )
 
+
+    train_cfg["logger"] = "wandb"
+    train_cfg["user_name"] = args.wandb_username
+    train_cfg["wandb_project"] = wand_project_name
+    train_cfg["record_interval"] =  50
+    train_cfg["run_name"] =  args.exp_name
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
 

@@ -9,7 +9,7 @@ from rsl_rl.runners import OnPolicyRunner
 import genesis as gs
 from datetime import datetime
 import re
-import wandb
+# import wandb
 
 def get_train_cfg(exp_name, max_iterations):
 
@@ -196,7 +196,8 @@ def get_cfgs():
             "dof_acc": -2.5e-6,
             # "hip_pos": -.1, #-1.0
             "contact": 0.01,
-            # "dof_pos_limits": -3.0,
+            "dof_pos_limits": -3.0,
+            "dof_vel": -1.0e-3,
             'torques': -0.0001,
             "termination": -30.0,
             # "feet_air_time": -1.0,
@@ -254,7 +255,7 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
-    parser.add_argument("--offline", action="store_true", help="If you do not want to upload online via wandb")
+    parser.add_argument("--wandb_username", type=str, default="go1_walking")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
@@ -303,14 +304,20 @@ def main():
     if args.resume:
         runner.load(resume_path)
 
-
-    wandb.init(project='custom_genesis', name=args.exp_name, dir=log_dir, mode='offline' if args.offline else 'online')
+    wand_project_name = 'ts_genesis'
+    # wandb.init(project=wand_project_name, name=args.exp_name, dir=log_dir, mode='offline' if args.offline else 'online')
 
     pickle.dump(
         [env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, train_cfg, terrain_cfg],
         open(f"{log_dir}/cfgs.pkl", "wb"),
     )
 
+
+    train_cfg["logger"] = "wandb"
+    train_cfg["user_name"] = args.wandb_username
+    train_cfg["wandb_project"] = wand_project_name
+    train_cfg["record_interval"] =  50
+    train_cfg["run_name"] =  args.exp_name
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
 

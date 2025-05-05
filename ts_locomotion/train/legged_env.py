@@ -48,6 +48,14 @@ def quaternion_from_euler_tensor(roll_deg, pitch_deg, yaw_deg):
 
 class LeggedEnv:
     def __init__(self, num_envs, env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, terrain_cfg, show_viewer=False, device="cuda"):
+        self.cfg = {
+            "env_cfg": env_cfg,
+            "obs_cfg": obs_cfg,
+            "noise_cfg": noise_cfg,
+            "reward_cfg": reward_cfg,
+            "command_cfg": command_cfg,
+            "terrain_cfg": terrain_cfg,
+        }
         self.device = torch.device(device)
         self.num_envs = num_envs
         self.num_obs = obs_cfg["num_obs"]
@@ -106,7 +114,7 @@ class LeggedEnv:
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
                 enable_collision=True,
-                enable_self_collision=True, #Making it true causes crash while learning
+                enable_self_collision=True,
                 enable_joint_limit=True,
             ),
             show_viewer=False,
@@ -1018,7 +1026,7 @@ class LeggedEnv:
                 rgb=True,
             )
     def get_recorded_frames(self):
-        if len(self._recorded_frames) == 150:
+        if len(self._recorded_frames) >=10:
             frames = self._recorded_frames
             self._recorded_frames = []
             self._recording = False
