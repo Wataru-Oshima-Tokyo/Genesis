@@ -45,6 +45,7 @@ def quaternion_from_euler_tensor(roll_deg, pitch_deg, yaw_deg):
     # Stack into (N,4)
     return torch.stack([qx, qy, qz, qw], dim=-1)
 
+
 class LeggedEnv:
     def __init__(self, num_envs, env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, terrain_cfg, show_viewer=False, device="cuda"):
         self.device = torch.device(device)
@@ -105,7 +106,7 @@ class LeggedEnv:
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
                 enable_collision=True,
-                enable_self_collision=True,
+                enable_self_collision=True, #Making it true causes crash while learning
                 enable_joint_limit=True,
             ),
             show_viewer=False,
@@ -131,6 +132,7 @@ class LeggedEnv:
                 GUI=show_viewer        
             )
         self._recording = False
+        self.mean_reward_flag = False
         self._recorded_frames = []
 
 
@@ -157,11 +159,11 @@ class LeggedEnv:
             total_height =(self.rows)* subterrain_size
 
             # Calculate the center coordinates
-            center_x = total_width / 2
-            center_y = total_height / 2
+            self.center_x = total_width / 2
+            self.center_y = total_height / 2
 
             self.terrain  = gs.morphs.Terrain(
-                pos=(-center_x,-center_y,0),
+                pos=(-self.center_x,-self.center_y,0),
                 subterrain_size=(subterrain_size, subterrain_size),
                 n_subterrains=n_subterrains,
                 horizontal_scale=horizontal_scale,
@@ -212,12 +214,12 @@ class LeggedEnv:
             self.subterrain_centers = []
             # Get the terrain's origin position in world coordinates
             terrain_origin_x, terrain_origin_y, terrain_origin_z = self.terrain.pos
-            height_field = self.global_terrain.geoms[0].metadata["height_field"]
+            self.height_field = self.global_terrain.geoms[0].metadata["height_field"]
             for row in range(self.rows):
                 for col in range(self.cols):
                     subterrain_center_x = terrain_origin_x + (col + 0.5) * subterrain_size
                     subterrain_center_y = terrain_origin_y + (row + 0.5) * subterrain_size
-                    subterrain_center_z = (height_field[int(subterrain_center_x), int(subterrain_center_y)] ) * vertical_scale 
+                    subterrain_center_z = (self.height_field[int(subterrain_center_x), int(subterrain_center_y)] ) * vertical_scale 
                     print(subterrain_center_x, subterrain_center_y, subterrain_center_z)
                     self.subterrain_centers.append((subterrain_center_x, subterrain_center_y, subterrain_center_z))
 
@@ -225,9 +227,12 @@ class LeggedEnv:
             self.spawn_counter = 0
             self.max_num_centers = len(self.subterrain_centers)
             self.random_pos = self.generate_random_positions()
+            self.height_field_tensor = torch.tensor(
+                self.height_field, device=self.device, dtype=gs.tc_float
+            )
         # names to indices
-        self.motor_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.env_cfg["dof_names"]]
-        self.hip_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.env_cfg["hip_joint_names"]]
+        self.motor_dofs = [self.robot.get_joint(name).dof_start for name in self.env_cfg["dof_names"]]
+        self.hip_dofs = [self.robot.get_joint(name).dof_start for name in self.env_cfg["hip_joint_names"]]
 
         def find_link_indices(names):
             link_indices = list()
@@ -308,7 +313,6 @@ class LeggedEnv:
             self.reward_functions[name] = getattr(self, "_reward_" + name)
 
         # initialize buffers
-
         self.init_buffers()
         print("Done initializing")
 
@@ -355,6 +359,10 @@ class LeggedEnv:
             device=self.device,
             dtype=gs.tc_int,
         )
+
+        self.episode_returns = torch.zeros(
+            (self.num_envs,), device=self.device, dtype=gs.tc_float
+        )
         self.noise_scale_vec = self._get_noise_scale_vec()
         self.last_actions = torch.zeros_like(self.actions)
         self.dof_pos = torch.zeros_like(self.actions)
@@ -387,6 +395,16 @@ class LeggedEnv:
             dtype=torch.float, 
             device=self.device, 
             requires_grad=False
+        )
+        self.pitch_exceed_duration_buf = torch.zeros(
+            self.num_envs, 
+            dtype=torch.float, 
+            device=self.device
+        )
+        self.roll_exceed_duration_buf = torch.zeros(
+            self.num_envs, 
+            dtype=torch.float, 
+            device=self.device
         )
         self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
         # Iterate over the motor DOFs
@@ -425,8 +443,18 @@ class LeggedEnv:
             dtype=gs.tc_int, 
         )
         self.extras = dict()  # extra information for logging
+        self.extras["observations"] = dict()
 
 
+
+    def get_terrain_height_at(self, x_world, y_world):
+        x_shifted = x_world + self.center_x
+        y_shifted = y_world + self.center_y
+
+        j = (x_shifted / self.terrain_cfg["horizontal_scale"]).long().clamp_(0, self.height_field_tensor.shape[1]-1)
+        i = (y_shifted / self.terrain_cfg["horizontal_scale"]).long().clamp_(0, self.height_field_tensor.shape[0]-1)
+
+        return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
 
 
     def _resample_commands_max(self, envs_idx):
@@ -449,10 +477,12 @@ class LeggedEnv:
         return min_val + (max_val - min_val) * skewed_samples
 
     def _resample_commands(self, envs_idx):
-        # self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
-        self.commands[envs_idx, 0] = self.biased_sample(
-            *self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device, bias=2.0
-        )
+        if False:
+            self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
+        else:
+            self.commands[envs_idx, 0] = self.biased_sample(
+                *self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device, bias=2.0
+            )
         self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["lin_vel_y_range"], (len(envs_idx),), self.device)
         self.commands[envs_idx, 2] = gs_rand_float(*self.command_cfg["ang_vel_range"], (len(envs_idx),), self.device)
 
@@ -667,8 +697,9 @@ class LeggedEnv:
         self.compute_observations()
 
         self._render_headless()
+        self.extras["observations"]["critic"] = self.privileged_obs_buf
 
-        return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
+        return self.obs_buf, self.rew_buf, self.reset_buf, self.extras
 
 
     def compute_observations(self):
@@ -729,9 +760,13 @@ class LeggedEnv:
             rew = self._reward_termination() * self.reward_scales["termination"]
             self.rew_buf += rew
             self.episode_sums["termination"] += rew
+        self.episode_returns += self.rew_buf     # add current step reward
+
 
     def get_observations(self):
-        return self.obs_buf
+        self.extras["observations"]["critic"] = self.privileged_obs_buf
+
+        return self.obs_buf, self.extras
 
     def get_privileged_observations(self):
         return self.privileged_obs_buf
@@ -772,9 +807,25 @@ class LeggedEnv:
         self.contact_duration_buf[in_contact] += self.dt
         self.reset_buf = self.contact_duration_buf > self.env_cfg["termination_duration"]
         #pitch and roll degree exceed termination
-        if not self.termination_exceed_degree_ignored: 
-            self.reset_buf |= torch.abs(self.base_euler[:, 1]) > self.termination_if_pitch_greater_than_value
-            self.reset_buf |= torch.abs(self.base_euler[:, 0]) > self.termination_if_roll_greater_than_value
+        if not self.termination_exceed_degree_ignored:
+            # Check where pitch and roll exceed thresholds
+            pitch_exceeded = torch.abs(self.base_euler[:, 1]) > self.termination_if_pitch_greater_than_value
+            roll_exceeded = torch.abs(self.base_euler[:, 0]) > self.termination_if_roll_greater_than_value
+
+            # Increment duration where exceeded
+            self.pitch_exceed_duration_buf[pitch_exceeded] += self.dt
+            self.roll_exceed_duration_buf[roll_exceeded] += self.dt
+
+            # Reset duration where NOT exceeded
+            self.pitch_exceed_duration_buf[~pitch_exceeded] = 0.0
+            self.roll_exceed_duration_buf[~roll_exceeded] = 0.0
+
+            # Trigger reset if exceed duration > threshold (e.g., 3 seconds)
+            pitch_timeout = self.pitch_exceed_duration_buf > self.env_cfg["angle_termination_duration"]
+            roll_timeout = self.roll_exceed_duration_buf > self.env_cfg["angle_termination_duration"]
+
+            self.reset_buf |= pitch_timeout
+            self.reset_buf |= roll_timeout
         # Timeout termination
         self.reset_buf |= self.base_pos[:, 2] < self.env_cfg['termination_if_height_lower_than']
         # -------------------------------------------------------
@@ -800,7 +851,7 @@ class LeggedEnv:
     def reset_idx(self, envs_idx):
         if len(envs_idx) == 0:
             return
-
+        mean_reward = torch.mean(self.episode_returns[envs_idx]).item()
         # reset dofs
         self.dof_pos[envs_idx] = self.default_dof_pos
         self.dof_vel[envs_idx] = 0.0
@@ -821,8 +872,12 @@ class LeggedEnv:
 
         self.robot.set_pos(self.base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
 
-        if self.env_cfg["randomize_rot"]:
+        self.mean_reward_flag = mean_reward > 10
+        
+
+        if self.env_cfg["randomize_rot"] and self.mean_reward_flag:
             # 1) Get random roll, pitch, yaw (in degrees) for each environment.
+            
             roll = gs_rand_float(*self.env_cfg["roll_range"],  (len(envs_idx),), self.device)
             pitch = gs_rand_float(*self.env_cfg["pitch_range"], (len(envs_idx),), self.device)
             yaw = gs_rand_float(*self.env_cfg["yaw_range"],    (len(envs_idx),), self.device)
@@ -865,11 +920,14 @@ class LeggedEnv:
         self._resample_commands(envs_idx)
         self._randomize_rigids(envs_idx)
         self.extras["episode"] = {}
+        mean_total_reward = 0
         for key in self.episode_sums.keys():
             self.extras["episode"]["rew_" + key] = (
                 torch.mean(self.episode_sums[key][envs_idx]).item() / self.env_cfg["episode_length_s"]
             )
             self.episode_sums[key][envs_idx] = 0.0
+
+        
         self._resample_commands(envs_idx)
         # self._resample_commands_max(envs_idx)
         if self.env_cfg['send_timeouts']:
@@ -1025,7 +1083,7 @@ class LeggedEnv:
         # Apply friction to the specified environments
         self.robot.set_friction_ratio(
             friction_ratio=random_friction,
-            ls_idx_local=np.arange(0, self.robot.n_links),
+            links_idx_local=np.arange(0, self.robot.n_links),
             envs_idx=env_ids,  # Apply only to selected environments
         )
         
@@ -1039,7 +1097,7 @@ class LeggedEnv:
         # Apply only to base_link in the selected environments
         self.robot.set_mass_shift(
             mass_shift=mass_shift,
-            ls_idx_local=ls_idx_local,  
+            links_idx_local=ls_idx_local,  
             envs_idx=env_ids  
         )
 
@@ -1054,7 +1112,7 @@ class LeggedEnv:
         # Apply only to base_link in the selected environments
         self.robot.set_COM_shift(
             com_shift=com_shift,
-            ls_idx_local=ls_idx_local,  # Wrap it in a list
+            links_idx_local=ls_idx_local,  # Wrap it in a list
             envs_idx=env_ids  # Apply only to specific environments
         )
 
@@ -1119,6 +1177,21 @@ class LeggedEnv:
     def _reward_base_height(self):
         # Penalize base height away from target
         return torch.square(self.base_pos[:, 2] - self.reward_cfg["base_height_target"])
+
+    def _reward_relative_base_height(self):
+        # --- 現在の相対高さ --------------------------------------------------
+        terrain_h = self.get_terrain_height_at(self.base_pos[:, 0], self.base_pos[:, 1])
+        rel_h     = self.base_pos[:, 2] - terrain_h          # shape = (N,)
+
+        # --- 目標との差分 (低すぎるときだけ) ---------------------------------
+        target  = self.reward_cfg["relative_base_height_target"]
+        penalty = torch.square(torch.relu(target - rel_h))   # shape = (N,)
+
+        # --- ピッチ角が ±10° 以内の環境だけ有効にする -------------------------
+        # base_euler[:, 1] は pitch (deg) で格納されている前提
+        pitch_ok = (torch.abs(self.base_euler[:, 1]) < 10.0) # Bool tensor shape = (N,)
+        penalty  = penalty * pitch_ok.float()                # True →そのまま, False→0
+        return penalty
 
     def _reward_collision(self):
         """

@@ -99,10 +99,10 @@ def get_cfgs():
         ],
         'PD_stiffness': {'hip':   20.0,
                          'thigh': 20.0,
-                          'calf': 20.0},
+                          'calf': 40.0},
         'PD_damping': {'hip':    0.5,
                         'thigh': 0.5,
-                        'calf':  0.5},
+                        'calf':  1.0},
         'force_limit': {'hip':    23.5,
                         'thigh':  23.5,
                         'calf':   35.5},
@@ -174,7 +174,7 @@ def get_cfgs():
     reward_cfg = {
         "tracking_sigma": 0.25,
         "base_height_target": 0.35,
-        "relative_base_height_target": 0.32,
+        "relative_base_height_target": 0.30,
         "step_period": 0.5, #0.8
         "step_offset": 0.2, #0.5
         "front_feet_relative_height_from_base": 0.1,
@@ -187,24 +187,23 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -0.001, #-5.0
-            "relative_base_height": -5.0, #-5.0
-            "orientation": -0.001, #-30.0
+            "lin_vel_z": -10.0, #-5.0
+            "relative_base_height": -30.0, # -30.0
+            "orientation": -30.0,
             "ang_vel_xy": -0.05,
-            "collision": -0.5,
+            "collision": -2.0,
             # "action_rate": -0.1,
             "contact_no_vel": -0.002,
             "dof_acc": -2.5e-6,
             # "hip_pos": -.1, #-1.0
             "contact": 0.01,
             "dof_pos_limits": -3.0,
-            "dof_vel": -1.0e-3
-            'torques': -0.00002,
+            'torques': -0.0001,
             "termination": -30.0,
             # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
             # "front_feet_swing_height_from_world": -10.0, #-10.0
-            # "feet_contact_forces": -0.01,
+            "feet_contact_forces": -1.0,
             # "rear_feet_swing_height": -0.1, #-10.0
         },
     }
@@ -231,17 +230,17 @@ def get_cfgs():
         "subterrain_size": 4.0,
         "horizontal_scale": 0.05,
         "vertical_scale": 0.005,
-        "cols": 5,  #should be more than 5
-        "rows": 5,   #should be more than 5
+        "cols": 6,  #should be more than 5
+        "rows": 6,   #should be more than 5
         "selected_terrains":{
-            # "flat_terrain" : {"probability": 0.1},
-            "stamble_terrain" : {"probability": 0.1},
-            "pyramid_sloped_terrain" : {"probability": 0.1},
-            # "random_uniform_terrain" : {"probability": 0.1},
-            # "fractal_terrain" : {"probability": 0.1},
-            "pyramid_stairs_terrain" : {"probability": 0.2},
+            "flat_terrain" : {"probability": 0.1},
+            # "stamble_terrain" : {"probability": 0.3},
+            # "pyramid_sloped_terrain" : {"probability": 0.1},
+            # # "random_uniform_terrain" : {"probability": 0.1},
+            # # "fractal_terrain" : {"probability": 0.1},
+            # "pyramid_stairs_terrain" : {"probability": 0.5},
             # "wave_terrain": {"probability": 0.1},
-            "pyramid_steep_down_stairs_terrain" : {"probability": .2},
+            # "pyramid_steep_down_stairs_terrain" : {"probability": .5},
         }
     }
 
