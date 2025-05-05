@@ -100,7 +100,7 @@ class LeggedEnv:
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=40,
             ),
-            vis_options=gs.options.VisOptions(n_rendered_envs=1),
+            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(1))),
             rigid_options=gs.options.RigidOptions(
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
@@ -135,11 +135,12 @@ class LeggedEnv:
 
 
         self.terrain_type = terrain_cfg["terrain_type"]
+        subterrain_size = terrain_cfg["subterrain_size"]
+        horizontal_scale = terrain_cfg["horizontal_scale"]
+        vertical_scale = terrain_cfg["vertical_scale"]        
         if self.terrain_type != "plane":
             # # add plain
-            subterrain_size = terrain_cfg["subterrain_size"]
-            horizontal_scale = terrain_cfg["horizontal_scale"]
-            vertical_scale = terrain_cfg["vertical_scale"]
+
             ########################## entities ##########################
             self.cols = terrain_cfg["cols"]
             self.rows = terrain_cfg["rows"]
@@ -148,7 +149,7 @@ class LeggedEnv:
             probs = [terrain["probability"] for terrain in self.selected_terrains.values()]
             total = sum(probs)
             normalized_probs = [p / total for p in probs]
-            subterrain_grid, subterrain_center_z_values  = self.generate_subterrain_grid(self.rows, self.cols, terrain_types, normalized_probs)
+            subterrain_grid  = self.generate_subterrain_grid(self.rows, self.cols, terrain_types, normalized_probs)
 
 
             # Calculate the total width and height of the terrain
@@ -167,29 +168,16 @@ class LeggedEnv:
                 vertical_scale=vertical_scale,
                 subterrain_types=subterrain_grid
             )        
-            # Get the terrain's origin position in world coordinates
-            terrain_origin_x, terrain_origin_y, terrain_origin_z = self.terrain.pos
+
 
             self.terrain_min_x = - (total_width  / 2.0)
             self.terrain_max_x =   (total_width  / 2.0)
             self.terrain_min_y = - (total_height / 2.0)
             self.terrain_max_y =   (total_height / 2.0)
-                        # Calculate the center of each subterrain in world coordinates
-            self.subterrain_centers = []
+            # Calculate the center of each subterrain in world coordinates
+
+            self.global_terrain = self.scene.add_entity(self.terrain)
             
-            for row in range(self.rows):
-                for col in range(self.cols):
-                    subterrain_center_x = terrain_origin_x + (col + 0.5) * subterrain_size
-                    subterrain_center_y = terrain_origin_y + (row + 0.5) * subterrain_size
-                    subterrain_center_z = subterrain_center_z_values[row][col]
-                    self.subterrain_centers.append((subterrain_center_x, subterrain_center_y, subterrain_center_z))
-
-            # Print the centers
-            self.spawn_counter = 0
-            self.max_num_centers = len(self.subterrain_centers)
-
-            self.scene.add_entity(self.terrain)
-            self.random_pos = self.generate_random_positions()
         else:
             self.scene.add_entity(
                 gs.morphs.Plane(),
@@ -220,7 +208,23 @@ class LeggedEnv:
 
         # build
         self.scene.build(n_envs=num_envs)
+        if self.terrain_type != "plane":
+            self.subterrain_centers = []
+            # Get the terrain's origin position in world coordinates
+            terrain_origin_x, terrain_origin_y, terrain_origin_z = self.terrain.pos
+            height_field = self.global_terrain.geoms[0].metadata["height_field"]
+            for row in range(self.rows):
+                for col in range(self.cols):
+                    subterrain_center_x = terrain_origin_x + (col + 0.5) * subterrain_size
+                    subterrain_center_y = terrain_origin_y + (row + 0.5) * subterrain_size
+                    subterrain_center_z = (height_field[int(subterrain_center_x), int(subterrain_center_y)] ) * vertical_scale 
+                    print(subterrain_center_x, subterrain_center_y, subterrain_center_z)
+                    self.subterrain_centers.append((subterrain_center_x, subterrain_center_y, subterrain_center_z))
 
+            # Print the centers
+            self.spawn_counter = 0
+            self.max_num_centers = len(self.subterrain_centers)
+            self.random_pos = self.generate_random_positions()
         # names to indices
         self.motor_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.env_cfg["dof_names"]]
         self.hip_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.env_cfg["hip_joint_names"]]
@@ -266,8 +270,6 @@ class LeggedEnv:
             for key in force_limit.keys():
                 if key in dof_name:
                     self.force_limits.append(force_limit[key])
-        print(self.p_gains)
-        print(self.d_gains)
         self.p_gains = torch.tensor(self.p_gains, device=self.device)
         self.d_gains = torch.tensor(self.d_gains, device=self.device)
         self.batched_p_gains = self.p_gains[None, :].repeat(self.num_envs, 1)
@@ -281,13 +283,6 @@ class LeggedEnv:
             dofs_idx_local=self.motor_dofs
         )
         # Store link indices that trigger termination or penalty
-
-        # self.termination_contact_indices = env_cfg.get("termination_contact_indices", [])
-        # self.penalised_contact_indices = env_cfg.get("penalised_contact_indices", [])
-        # Convert link names to indices
-        # self.termination_contact_indices = [self.rself.base_link_indexobot.get_link(name).idx_local  for name in self.env_cfg["termination_contact_names"]]
-        # self.penalised_contact_indices = [self.robot.get_link(name).idx_local  for name in self.env_cfg["penalised_contact_names"]]
-        # self.feet_indices = [self.robot.get_link(name).idx_local  for name in self.env_cfg["feet_names"]]
         self.feet_front_indices = self.feet_indices[:2]
         self.feet_rear_indices = self.feet_indices[2:]
 
@@ -315,6 +310,7 @@ class LeggedEnv:
         # initialize buffers
 
         self.init_buffers()
+        print("Done initializing")
 
 
 
@@ -467,7 +463,6 @@ class LeggedEnv:
         to another 'pyramid_sloped_terrain'.
         """
         grid = [[None for _ in range(cols)] for _ in range(rows)]
-        sub_terrain_z_values = [[None for _ in range(cols)] for _ in range(rows)]
         for i in range(rows):
             for j in range(cols):
                 terrain_choice = random.choices(terrain_types, weights=weights, k=1)[0]
@@ -480,34 +475,8 @@ class LeggedEnv:
                     # Choose terrain based on the weights
                     terrain_choice = random.choices(terrain_options, weights=terrain_weights, k=1)[0]
 
-                z_value = self.check_terrain_type_and_return_value(terrain_choice)
                 grid[i][j] = terrain_choice
-                sub_terrain_z_values[i][j] = z_value
-        return grid, sub_terrain_z_values
-
-
-    def check_terrain_type_and_return_value(self, terrain_choice):
-
-        if terrain_choice == "flat_terrain":
-            return 0.0
-        elif terrain_choice == "random_uniform_terrain":
-            return 0.5
-        elif terrain_choice == "discrete_obstacles_terrain":
-            return 0.5
-        elif terrain_choice == "pyramid_sloped_terrain":
-            return 3.0
-        elif terrain_choice == "pyramid_down_sloped_terrain":
-            return -0.1
-        elif terrain_choice == "pyramid_stairs_terrain":
-            return 5.0
-        elif terrain_choice == "pyramid_down_stairs_terrain":
-            return -0.1
-        elif terrain_choice == "pyramid_steep_down_stairs_terrain":
-            return -3.0
-        elif terrain_choice == "wave_terrain":
-            return 0.5
-        else:
-            return 1.0
+        return grid
 
     def init_foot(self):
         self.feet_num = len(self.feet_indices)
@@ -635,47 +604,13 @@ class LeggedEnv:
             self.dof_pos[:] = self.robot.get_dofs_position(self.motor_dofs)
             self.dof_vel[:] = self.robot.get_dofs_velocity(self.motor_dofs)
 
-            # if i == 0 or i == 2:
-            #     dof_pos_list.append(self.robot.get_dofs_position().detach().cpu())
-            #     dof_vel_list.append(self.robot.get_dofs_velocity().detach().cpu())
-
-        # target_dof_pos = exec_actions * self.env_cfg["action_scale"] + self.default_dof_pos
-        # self.dof_pos_list = dof_pos_list
-        # self.dof_vel_list = dof_vel_list
-        # self.torques = self._compute_torques(exec_actions)
-        # self.robot.control_dofs_position(target_dof_pos, self.motor_dofs)
 
 
 
         
-        # self.scene.step()
-        # Check for NaNs in base pose and quat
+
         pos_after_step = self.robot.get_pos()
         quat_after_step = self.robot.get_quat()
-
-        # Identify bad environments
-        bad_envs = torch.isnan(pos_after_step).any(dim=1) | torch.isnan(quat_after_step).any(dim=1)
-        if bad_envs.any():
-            print(f"NaN detected in {bad_envs.sum().item()} envs. Removing from batch.")
-            print(f"bad actions {self.actions[bad_envs]}")
-            self.reset_buf[bad_envs] = True
-
-        # 2a. Check for NaNs in base state
-        # if torch.isnan(self.robot.get_pos()).any() or torch.isnan(self.robot.get_quat()).any():
-        #     print("NaN detected right after scene.step() in base pos/quat!")
-        #     print("Base pos:", self.robot.get_pos())
-        #     print("Base quat:", self.robot.get_quat())
-        #     raise ValueError("NaNs in base pose after scene step.")
-        # 2b. Check for NaNs in DOF states
-        # dof_pos_check = self.robot.get_dofs_position(self.motor_dofs)
-        # dof_vel_check = self.robot.get_dofs_velocity(self.motor_dofs)
-        # if torch.isnan(dof_pos_check).any() or torch.isnan(dof_vel_check).any():
-        #     print("NaN detected right after scene.step() in DOF pos/vel!")
-        #     print("DOF pos:", dof_pos_check)
-        #     print("DOF vel:", dof_vel_check)
-        #     raise ValueError("NaNs in DOF states after scene step.")
-
-
 
         # update buffers
         self.episode_length_buf += 1
@@ -741,29 +676,18 @@ class LeggedEnv:
         cos_phase = torch.cos(2 * np.pi * self.leg_phase)  # Shape: (batch_size, 4)
 
 
-        # # Right before building self.obs_buf
-        # if torch.isnan(self.base_lin_vel).any() or torch.isnan(self.base_ang_vel).any():
-        #     print("NaN in base_lin_vel or base_ang_vel before obs!")
-        #     print("base_lin_vel:", self.base_lin_vel)
-        #     print("base_ang_vel:", self.base_ang_vel)
-        #     raise ValueError("NaNs in velocity terms before building obs.")
-
-        # # If you're computing sin/cos phases, check them too:
-        # if torch.isnan(self.leg_phase).any():
-        #     print("NaN in leg_phase before obs!")
-        #     print("leg_phase:", self.leg_phase)
-        #     raise ValueError("NaNs in leg_phase.")
         # compute observations
         self.obs_buf = torch.cat(
             [
-                self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
+                # self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
                 self.projected_gravity,  # 3
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
+                # self.torques * self.obs_scales["torques"],  # 12 ← NEW
                 self.actions,  # 12
-                sin_phase, #4
-                cos_phase #4
+                # sin_phase, #4
+                # cos_phase #4
             ],
             axis=-1,
         )
@@ -776,6 +700,7 @@ class LeggedEnv:
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
+                self.torques * self.obs_scales["torques"],           # 12 ← NEW
                 self.actions,  # 12
                 sin_phase, #4
                 cos_phase #4
@@ -787,38 +712,9 @@ class LeggedEnv:
         self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -self.clip_obs, self.clip_obs)
         if self.add_noise:
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
-        self.check_and_sanitize_observations()
+
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
-
-
-    def check_and_sanitize_observations(self):
-        """
-        Detect NaN/Inf in self.obs_buf / self.privileged_obs_buf.
-        Reset those environments and replace only the rows with NaN/Inf values.
-        """
-        # 1) Find which envs have NaN or Inf in either buffer.
-        bad_envs = torch.any(~torch.isfinite(self.obs_buf), dim=1) | torch.any(~torch.isfinite(self.privileged_obs_buf), dim=1)
-
-        if bad_envs.any():
-            num_bad = bad_envs.sum().item()
-            print(f"WARNING: {num_bad} envs have invalid observations -> resetting them.")
-            
-            # Find the indices of NaN values in self.obs_buf
-            nan_indices = torch.isnan(self.obs_buf).nonzero(as_tuple=False)
-            # for idx in nan_indices:
-            #     env_idx, obs_idx = idx
-            #     print(f"NaN detected at env {env_idx}, observation {obs_idx}: {self.obs_buf[env_idx, obs_idx]}")
-            #     print(f"base pose {self.base_pos[env_idx]}")
-            
-            # Reset those environments
-            # self.reset_idx(bad_envs.nonzero(as_tuple=False).flatten())
-
-            # 2) Replace rows with NaN values in obs_buf and privileged_obs_buf
-            for env_idx in bad_envs.nonzero(as_tuple=False).flatten():
-                self.random_pos[env_idx] = self.random_pos[0]
-                self.obs_buf[env_idx] =  copy.deepcopy(self.zero_obs)
-                self.privileged_obs_buf[env_idx] =  copy.deepcopy(self.zero_privileged_obs)
 
 
     def compute_rewards(self):
@@ -860,8 +756,8 @@ class LeggedEnv:
         noise_vec[6:9] = 0. # commands
         noise_vec[9:9+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
         noise_vec[9+self.num_actions:9+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
-        noise_vec[9+2*self.num_actions:9+3*self.num_actions] = 0. # previous actions
-        noise_vec[9+3*self.num_actions:9+3*self.num_actions+8] = 0. # sin/cos phase
+        # noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
+        # noise_vec[9+4*self.num_actions:9+4*self.num_actions+8] = 0. # sin/cos phase
         return noise_vec
 
 
@@ -918,14 +814,10 @@ class LeggedEnv:
         )
         # reset base
         # Check if the new_base_pos contains any NaNs
-        # random_index = random.randrange(len(self.random_pos))
         # Randomly choose positions from pre-generated random_pos for each environment
-        # random_indices = torch.randint(0, self.num_envs, (len(envs_idx),), device=self.device)
-        self.base_pos[envs_idx] = self.random_pos[envs_idx] + self.base_init_pos
-        if torch.isnan(self.base_pos[envs_idx]).any():
-            print(f"WARNING: NaN detected in base_pos for envs {envs_idx}. Skipping assignment.")
-        else:
-            self.base_pos[envs_idx] = self.random_pos[0] + self.base_init_pos
+        random_indices = torch.randint(0, self.num_envs, (len(envs_idx),), device=self.device)
+        self.base_pos[envs_idx] = self.random_pos[random_indices] + self.base_init_pos
+            
 
         self.robot.set_pos(self.base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
 
@@ -953,21 +845,9 @@ class LeggedEnv:
                 (len(envs_idx), self.num_actions),
                 device=self.device
             )
-        # 1a. Check right after setting position
-        if torch.isnan(self.base_pos[envs_idx]).any():
-            print("NaN in base_pos right after setting it in reset_idx()")
-            print("envs_idx:", envs_idx)
-            print("base_pos:", self.base_pos[envs_idx])
-            raise ValueError("NaNs in base_pos during reset.")
 
         # 1b. Check DOFs
         dof_pos = self.robot.get_dofs_position(self.motor_dofs)
-        if torch.isnan(dof_pos[envs_idx]).any():
-            print("NaN in dof_pos right after reset_idx()")
-            print("envs_idx:", envs_idx)
-            print("dof_pos:", dof_pos[envs_idx])
-            raise ValueError("NaNs in dof_pos during reset.")
-
 
         self.base_lin_vel[envs_idx] = 0
         self.base_ang_vel[envs_idx] = 0
@@ -1256,7 +1136,6 @@ class LeggedEnv:
         contact = torch.norm(self.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
         # print(contact)
         contact_feet_vel = self.feet_vel * contact.unsqueeze(-1)
-        # print(contact_feet_vel)
         penalize = torch.square(contact_feet_vel[:, :, :3])
         return torch.sum(penalize, dim=(1,2))
 

@@ -78,25 +78,18 @@ def random_uniform_terrain(
     x = np.linspace(0, terrain.width * terrain.horizontal_scale, height_field_downsampled.shape[0])
     y = np.linspace(0, terrain.length * terrain.horizontal_scale, height_field_downsampled.shape[1])
 
-    # f = interpolate.interp2d(y, x, height_field_downsampled, kind="linear")
-    # f = RegularGridInterpolator((y, x), height_field_downsampled, method="linear")
-
-    # x_upsampled = np.linspace(0, terrain.width * terrain.horizontal_scale, terrain.width)
-    # y_upsampled = np.linspace(0, terrain.length * terrain.horizontal_scale, terrain.length)
-    # z_upsampled = np.rint(f(grid_points)).reshape(terrain.width, terrain.length)
-
-    # # z_upsampled = np.rint(f(y_upsampled, x_upsampled))
-    # # Create a grid of points for interpolation
-    # grid_points = np.array(np.meshgrid(y_upsampled, x_upsampled)).T.reshape(-1, 2)
     f = interpolate.RegularGridInterpolator((y, x), height_field_downsampled, method="linear")
 
     x_upsampled = np.linspace(0, terrain.width * terrain.horizontal_scale, terrain.width)
     y_upsampled = np.linspace(0, terrain.length * terrain.horizontal_scale, terrain.length)
     z_upsampled = np.rint(f((y_upsampled, x_upsampled)))
 
-    # Interpolate and reshape back to the terrain size
     terrain.height_field_raw += z_upsampled.astype(np.int16)
     return terrain
+
+
+
+
 
 
 def sloped_terrain(terrain, slope=1):
@@ -184,6 +177,11 @@ def discrete_obstacles_terrain(terrain, max_height, min_size, max_size, num_rect
     for _ in range(num_rects):
         width = np.random.choice(width_range)
         length = np.random.choice(length_range)
+
+        # 👉 Check if we can place width, length inside (i,j)
+        if (i - width <= 0) or (j - length <= 0):
+            continue  # cannot place obstacle, skip
+
         start_i = np.random.choice(range(0, i - width, 4))
         start_j = np.random.choice(range(0, j - length, 4))
         terrain.height_field_raw[start_i : start_i + width, start_j : start_j + length] = np.random.choice(height_range)
@@ -336,57 +334,165 @@ def stepping_stones_terrain(terrain, stone_size, stone_distance, max_height, pla
 
 
 
-def custom_terrain(terrain, step_size=1.0, max_step_height=0.1, num_steps=10):
+def stamble_terrain(terrain, step_height=0.02):
     """
-    Generate a simple terrain with random *vertical* (90-degree) steps along the x-axis.
-    In heightmap terms, this means each step is a single-column transition.
+    Generate stairs
 
     Parameters:
-        terrain (object): Terrain object with attributes:
-                          - width, length (discrete dimensions)
-                          - horizontal_scale (m per sample)
-                          - vertical_scale (m per height unit)
-                          - height_field_raw (2D numpy array, shape [width, length])
-        step_size (float): Width (in meters) of each step along the x-axis.
-        max_step_height (float): Maximum absolute step height (in meters).
-        num_steps (int): Number of random steps to create.
-
+        terrain (terrain): the terrain
+        step_width (float):  the width of the step [meters]
+        step_height (float): the step_height [meters]
+        platform_size (float): size of the flat platform at the center of the terrain [meters]
     Returns:
-        terrain (object): The terrain object with updated height_field_raw.
+        terrain (SubTerrain): update terrain
     """
-    # Convert step size in meters to number of horizontal samples.
-    step_size_in_samples = max(1, int(step_size / terrain.horizontal_scale))
+    # switch parameters to discrete units
+    step_width = 0.1
+    platform_size = 0.7
+    step_width = int(step_width / terrain.horizontal_scale)
+    step_height_ = int(step_height / terrain.vertical_scale)
+    platform_size = int(platform_size / terrain.horizontal_scale)
 
-    # Convert max step height in meters to integer height units.
-    max_step_height_units = int(max_step_height / terrain.vertical_scale)
+    height = 0
+    start_x = 0
+    stop_x = terrain.width
+    start_y = 0
+    stop_y = terrain.length
+    i = 1
+    while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
+        start_x += step_width
+        stop_x -= step_width
+        start_y += step_width
+        stop_y -= step_width
+        terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = step_height_ * i
+        i *= -1
+    return terrain
 
-    # Optionally clear the terrain first (set everything to a base height).
+def blocky_terrain(
+        terrain,
+        cube_size_m=0.7,     # smallest square patch edge, in metres
+        cube_height_m=0.17):   # |height| ≤ this, in metres
+    """
+    Place a single square cube (raised block) at the center of the terrain.
+
+    Parameters:
+    ----------
+    terrain : object
+        Must have:
+        - width, length: dimensions in samples
+        - horizontal_scale: meters per sample
+        - vertical_scale: meters per height unit
+        - height_field_raw: numpy array [width, length], dtype=int
+    cube_size_m : float
+        Physical edge length of the cube
+    cube_height_m : float
+        Height of the cube in meters
+    """
+    # Convert physical dimensions to index units
+    cube_size = int(cube_size_m / terrain.horizontal_scale)
+    cube_height = int(cube_height_m / terrain.vertical_scale)
+
+    # Center of the terrain
+    center_x = terrain.width // 2
+    center_y = terrain.length // 2
+
     terrain.height_field_raw[:, :] = 0
+    # Compute cube bounds (clamped)
+    # --- Raised cube at center ---
+    half = cube_size // 2
+    
+    step_size_for_width = int(terrain.width/4)
+    step_size_for_length = int(terrain.length/4)
+    sign = 1
+    for i in range(step_size_for_length):
+        for j in range(step_size_for_width):
+            x_start = j * 4
+            x_end   = x_start + cube_size
+            y_start = i * 4
+            y_end   = y_start + cube_size
+            terrain.height_field_raw[x_start:x_end, y_start:y_end] = cube_height
+            # sign *= -1
 
-    current_x = 0
-    current_height = 0  # Start at height = 0
+    
+    # Compute cube bounds (clamped)
+    # half = cube_size // 2
+    # --- Lowered cube to the right of center ---
+    x2_start = center_x - 2 
+    x2_end   = x2_start + cube_size
+    y2_start = center_y - 2  # same Y position
+    y2_end   = y2_start + cube_size
 
-    for _ in range(num_steps):
-        # Determine how far to extend this step (in x-direction).
-        next_x = min(terrain.width, current_x + step_size_in_samples)
+    # # Clear terrain to base height (optional)
+    # terrain.height_field_raw[:, :] = 0
 
-        # Choose a random step height delta in integer units.
-        # e.g., if max_step_height_units = 10, delta could be between -10 and +10.
-        delta_height = np.random.randint(-max_step_height_units, max_step_height_units + 1)
+    # Set the cube height
+    # terrain.height_field_raw[x2_start:x2_end, y2_start:y2_end] = -cube_height
 
-        # The new step's height is the old height plus delta.
-        current_height += delta_height
 
-        # Apply this new height to all cells in the [current_x : next_x, :] slice.
-        terrain.height_field_raw[current_x:next_x, :] = current_height
+    x3_start = center_x - 4 
+    x3_end   = x3_start + cube_size
+    y3_start = center_y - 4 # same Y position
+    y3_end   = y3_start + cube_size
 
-        # Advance 'current_x' to the end of this step.
-        current_x = next_x
+    # # Clear terrain to base height (optional)
+    # terrain.height_field_raw[:, :] = 0
 
-        # If we've hit or exceeded the terrain width, no more steps can be placed.
-        if current_x >= terrain.width:
-            break
+    # Set the cube height
+    # terrain.height_field_raw[x3_start:x3_end, y3_start:y3_end] = cube_height
 
+    # # Convert to terrain units
+    # cube_size = int(cube_size_m / terrain.horizontal_scale)
+    # cube_height = int(cube_height_m / terrain.vertical_scale)
+
+    # # Clear the terrain
+    # terrain.height_field_raw[:, :] = 0
+    # i = 1
+    # for x in range(0, terrain.width, cube_size):
+    #     for y in range(0, terrain.length, cube_size):
+    #         x_end = min(x + cube_size, terrain.width)
+    #         y_end = min(y + cube_size, terrain.length)
+    #         terrain.height_field_raw[x:x_end, y:y_end] = cube_height * i
+    #         i   *= -1
+
+
+    return terrain
+
+
+
+def debug_terrain(terrain):
+    """
+    Generate stairs
+
+    Parameters:
+        terrain (terrain): the terrain
+        step_width (float):  the width of the step [meters]
+        step_height (float): the step_height [meters]
+        platform_size (float): size of the flat platform at the center of the terrain [meters]
+    Returns:
+        terrain (SubTerrain): update terrain
+    """
+    # switch parameters to discrete units
+    step_width = 0.1
+    step_height = 0.02
+    platform_size = 1.5
+    step_width = int(step_width / terrain.horizontal_scale)
+    step_height = int(step_height / terrain.vertical_scale)
+    platform_size = int(platform_size / terrain.horizontal_scale)
+
+    height = 0
+    start_x = 0
+    stop_x = terrain.width
+    start_y = 0
+    stop_y = terrain.length
+    i = -1
+    while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
+        start_x += step_width
+        stop_x -= step_width
+        start_y += step_width
+        stop_y -= step_width
+        height += step_height
+        terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = step_height * i
+        i *= -1
     return terrain
 
 

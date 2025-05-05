@@ -61,7 +61,10 @@ def get_train_cfg(exp_name, max_iterations):
 def get_cfgs():
     env_cfg = {
         "num_actions": 12,
-        "robot_mjcf": "xml/go1/go1.xml",
+        "use_mjcf": True,
+        "robot_description": "xml/go1/go1.xml",
+        # "robot_description": "urdf/go1/urdf/go1.urdf",
+        # joint/link names
         # joint/link names
         'links_to_keep': ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot',],
         "default_joint_angles": {  # [rad]
@@ -100,12 +103,12 @@ def get_cfgs():
         'PD_damping': {'hip':    0.5,
                         'thigh': 0.5,
                         'calf':  0.5},
-        'force_limit': {'hip':    23.7,
-                        'thigh':  23.7,
-                        'calf':   23.7},
+        'force_limit': {'hip':    23.5,
+                        'thigh':  23.5,
+                        'calf':   35.5},
         # termination
         'termination_contact_link_names': ['base'],
-        'penalized_contact_link_names': ['base', 'thigh', 'calf'],
+        'penalized_contact_link_names': ['base', 'thigh'],
         'feet_link_names': ['foot'],
         'base_link_name': ['base'], 
         "hip_joint_names": [
@@ -114,12 +117,12 @@ def get_cfgs():
             "RL_hip_joint",
             "RR_hip_joint",            
         ],
-        "termination_if_roll_greater_than": 170,  # degree. 
-        "termination_if_pitch_greater_than": 170,
-        "termination_if_height_lower_than": -20,
-        "termination_duration": 0.002, #seconds
+        "termination_if_roll_greater_than": 0,  # degree. 
+        "termination_if_pitch_greater_than": 0,
+        "termination_if_height_lower_than": -40,
+        "termination_duration": 0.1, #seconds
         # base pose
-        "base_init_pos": [0.0, 0.0, 0.5],
+        "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
         "episode_length_s": 20.0,
         "resampling_time_s": 4.0,
@@ -127,46 +130,53 @@ def get_cfgs():
         "simulate_action_latency": True,
         'send_timeouts': True,
         "clip_actions": 100.0,
-        'control_freq': 50,
+        'control_freq': 40,
         'decimation': 4,
         # random push
         'push_interval_s': 5,
         'max_push_vel_xy': 1.0,
         # domain randomization
+        'randomize_delay': True,
+        'delay_range': [0.015, 0.03], #seconds        
         'randomize_friction': True,
         'friction_range': [0.1, 1.5],
         'randomize_base_mass': True,
-        'added_mass_range': [-1., 5.],
+        'added_mass_range': [-1., 3.],
         'randomize_com_displacement': True,
         'com_displacement_range': [-0.01, 0.01],
-        'randomize_motor_strength': False,
+        'randomize_motor_strength': True,
         'motor_strength_range': [0.9, 1.1],
-        'randomize_motor_offset': False,
+        'randomize_motor_offset': True,
         'motor_offset_range': [-0.02, 0.02],
         'randomize_kp_scale': False,
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
+        "randomize_rot": False,
+        "pitch_range": [-40, 40],  # degrees
+        "roll_range": [-50, 50],
+        "yaw_range": [-180, 180],
     }
     obs_cfg = {
-        "num_obs": 53,
-        "num_privileged_obs": 56,
+        "num_obs": 42,
+        "num_privileged_obs": 68,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
             "dof_pos": 1.0,
             "dof_vel": 0.05,
+            "torques": 0.03,
         },
         "clip_observations":100,
     }
 
     reward_cfg = {
         "tracking_sigma": 0.25,
-        "base_height_target": 0.28,
-        "step_period": 0.8,
-        "step_offset": 0.5,
+        "base_height_target": 0.32,
+        "step_period": 0.5, #0.8
+        "step_offset": 0.2, #0.5
         "front_feet_relative_height_from_base": 0.1,
-        "front_feet_relative_height_from_world": 0.2,
+        "front_feet_relative_height_from_world": 0.05,
         "rear_feet_relative_height_from_base": 0.15,
         "soft_dof_pos_limit": 0.9,
         "soft_torque_limit": 1.0,
@@ -175,28 +185,28 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -.001, #-5.0
-            # "orientation": -0, #-30.0
-            "ang_vel_xy": -0.1,
-            "collision": -5.0,
-            "action_rate": -0.01,
+            "lin_vel_z": -0.001, #-5.0
+            # "base_height": -30.0, # -30.0
+            "orientation": -0.001, #-30.0
+            "ang_vel_xy": -0.05,
+            "collision": -2.0,
+            # "action_rate": -0.1,
             "contact_no_vel": -0.002,
             "dof_acc": -2.5e-7,
-            "hip_pos": -1.0, #-1.0
+            "hip_pos": -.1, #-1.0
             "contact": 0.01,
             "dof_pos_limits": -3.0,
             'torques': -0.00002,
             "termination": -30.0,
-            "feet_contact_forces": -0.1
-            # "front_feet_swing_height": -10.0, #-10.0
+            # "feet_air_time": -1.0,
+            # "front_feet_swing_height_from_base": -5.0, #-10.0
+            # "front_feet_swing_height_from_world": -10.0, #-10.0
+            # "feet_contact_forces": -0.1,
             # "rear_feet_swing_height": -0.1, #-10.0
         },
     }
     command_cfg = {
         "num_commands": 3,
-        # "lin_vel_x_range": [.5, 1.0],
-        # "lin_vel_y_range": [0.0, 0.0],
-        # "ang_vel_range": [0.0, 0.0],
         "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],
@@ -210,24 +220,25 @@ def get_cfgs():
             "lin_vel": 0.1,
             "ang_vel": 0.2,
             "gravity": 0.05,
+            "torques": 0.5,
         }
-
     }
     terrain_cfg = {
-        "terrain_type": "trimesh",
-        "subterrain_size": 12.0,
-        "horizontal_scale": 0.25,
+        "terrain_type": "trimesh", #plane
+        "subterrain_size": 4.0,
+        "horizontal_scale": 0.05,
         "vertical_scale": 0.005,
-        "cols": 4,  #should be more than 5
-        "rows": 4,   #should be more than 5
+        "cols": 5,  #should be more than 5
+        "rows": 5,   #should be more than 5
         "selected_terrains":{
-            "custom_terrain" : {"probability": 100.5},
-            "flat_terrain" : {"probability": 0.3},
-            "random_uniform_terrain" : {"probability": 0.3},
-            "pyramid_sloped_terrain" : {"probability": 0.3},
-            "discrete_obstacles_terrain" : {"probability": 0.3},
-            "pyramid_down_stairs_terrain" : {"probability": 0.3},
-            "pyramid_steep_down_stairs_terrain" : {"probability": 0.0},
+            # "flat_terrain" : {"probability": 0.1},
+            "stamble_terrain" : {"probability": 0.1},
+            "pyramid_sloped_terrain" : {"probability": 0.1},
+            # "random_uniform_terrain" : {"probability": 0.1},
+            # "fractal_terrain" : {"probability": 0.1},
+            "pyramid_stairs_terrain" : {"probability": 0.2},
+            # "wave_terrain": {"probability": 0.1},
+            "pyramid_steep_down_stairs_terrain" : {"probability": .2},
         }
     }
 
@@ -236,9 +247,9 @@ def get_cfgs():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--exp_name", type=str, default="go1_rough_walking")
+    parser.add_argument("-e", "--exp_name", type=str, default="go1_walking")
     parser.add_argument("-B", "--num_envs", type=int, default=10000)
-    parser.add_argument("--max_iterations", type=int, default=100000)
+    parser.add_argument("--max_iterations", type=int, default=10000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
@@ -304,3 +315,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""
+# training
+python examples/locomotion/go1_train.py
+"""
