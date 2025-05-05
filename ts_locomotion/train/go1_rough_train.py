@@ -108,7 +108,7 @@ def get_cfgs():
                         'calf':   35.5},
         # termination
         'termination_contact_link_names': ['base'],
-        'penalized_contact_link_names': ['base', 'thigh'],
+        'penalized_contact_link_names': ['base', 'thigh', 'calf'],
         'feet_link_names': ['foot'],
         'base_link_name': ['base'], 
         "hip_joint_names": [
@@ -117,10 +117,11 @@ def get_cfgs():
             "RL_hip_joint",
             "RR_hip_joint",            
         ],
-        "termination_if_roll_greater_than": 0,  # degree. 
-        "termination_if_pitch_greater_than": 0,
+        "termination_if_roll_greater_than": 170,  # degree. 
+        "termination_if_pitch_greater_than": 170,
         "termination_if_height_lower_than": -40,
         "termination_duration": 0.1, #seconds
+        "angle_termination_duration": 2.0, #seconds
         # base pose
         "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
@@ -152,7 +153,7 @@ def get_cfgs():
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": False,
+        "randomize_rot": True,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-180, 180],
@@ -172,7 +173,8 @@ def get_cfgs():
 
     reward_cfg = {
         "tracking_sigma": 0.25,
-        "base_height_target": 0.32,
+        "base_height_target": 0.35,
+        "relative_base_height_target": 0.32,
         "step_period": 0.5, #0.8
         "step_offset": 0.2, #0.5
         "front_feet_relative_height_from_base": 0.1,
@@ -186,22 +188,23 @@ def get_cfgs():
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
             "lin_vel_z": -0.001, #-5.0
-            # "base_height": -30.0, # -30.0
+            "relative_base_height": -5.0, #-5.0
             "orientation": -0.001, #-30.0
             "ang_vel_xy": -0.05,
-            "collision": -2.0,
+            "collision": -0.5,
             # "action_rate": -0.1,
             "contact_no_vel": -0.002,
-            "dof_acc": -2.5e-7,
-            "hip_pos": -.1, #-1.0
+            "dof_acc": -2.5e-6,
+            # "hip_pos": -.1, #-1.0
             "contact": 0.01,
             "dof_pos_limits": -3.0,
+            "dof_vel": -1.0e-3
             'torques': -0.00002,
             "termination": -30.0,
             # "feet_air_time": -1.0,
             # "front_feet_swing_height_from_base": -5.0, #-10.0
             # "front_feet_swing_height_from_world": -10.0, #-10.0
-            # "feet_contact_forces": -0.1,
+            # "feet_contact_forces": -0.01,
             # "rear_feet_swing_height": -0.1, #-10.0
         },
     }

@@ -359,13 +359,16 @@ def stamble_terrain(terrain, step_height=0.02):
     start_y = 0
     stop_y = terrain.length
     i = 1
+    counter = 1
     while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
         start_x += step_width
         stop_x -= step_width
         start_y += step_width
         stop_y -= step_width
         terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = step_height_ * i
-        i *= -1
+        counter +=1
+        if counter%2 == 0:
+          i *= -1
     return terrain
 
 def blocky_terrain(
