@@ -255,7 +255,7 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
-    parser.add_argument("--wandb_username", type=str, default="go1_walking")
+    parser.add_argument("--wandb_username", type=str, default="wataru-oshima-techshare")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
