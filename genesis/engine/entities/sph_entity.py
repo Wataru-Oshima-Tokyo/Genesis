@@ -96,20 +96,20 @@ class SPHEntity(ParticleEntity):
         pos: ti.types.ndarray(),
         vel: ti.types.ndarray(),
     ):
-        for i in range(self.n_particles):
-            i_global = i + self._particle_start
+        for i_p, i_b in ti.ndrange(self.n_particles, self._sim._B):
+            i_global = i_p + self._particle_start
             for j in ti.static(range(3)):
-                pos[i, j] = self.solver.particles[i_global].pos[j]
-                vel[i, j] = self.solver.particles[i_global].vel[j]
+                pos[i_b, i_p, j] = self.solver.particles[i_global, i_b].pos[j]
+                vel[i_b, i_p, j] = self.solver.particles[i_global, i_b].vel[j]
 
     def add_grad_from_state(self, state):
         pass
 
     @ti.kernel
     def _kernel_get_particles(self, particles: ti.types.ndarray()):
-        for i in range(self.n_particles):
+        for i_p, i_b in ti.ndrange(self.n_particles, self._sim._B):
             for j in ti.static(range(3)):
-                particles[i, j] = self.solver.particles[i + self._particle_start].pos[j]
+                particles[i_b, i_p, j] = self.solver.particles[i_p + self._particle_start, i_b].pos[j]
 
     @gs.assert_built
     def get_state(self):
@@ -126,5 +126,5 @@ class SPHEntity(ParticleEntity):
         total_mass = 0.0
         for i in range(self.n_particles):
             i_global = i + self._particle_start
-            total_mass += self._solver.particles[i_global].m
+            total_mass += self._solver.particles[i_global, 0].m
         mass[0] = total_mass

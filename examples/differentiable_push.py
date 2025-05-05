@@ -11,7 +11,7 @@ def main():
     args = parser.parse_args()
 
     ########################## init ##########################
-    gs.init(seed=0, precision="32", logging_level="debug")
+    gs.init(seed=0, precision="32", logging_level="warning")
 
     ########################## create a scene ##########################
 
@@ -86,13 +86,14 @@ def main():
     )
 
     ########################## build ##########################
-    scene.build()
+    scene.build(n_envs=2)
 
     ########################## forward + backward twice ##########################
+    horizon = 150
+    v_list = [gs.tensor([[0.0, 1.0, 0.0], [0.0, 1.0, 0.0]], requires_grad=True) for _ in range(horizon)]
     for _ in range(2):
         scene.reset()
-        horizon = 150
-        init_pos = gs.tensor([0.3, 0.1, 0.28], requires_grad=True)
+        init_pos = gs.tensor([[0.3, 0.1, 0.28], [0.3, 0.1, 0.5]], requires_grad=True)
 
         # forward pass
         print("forward")
@@ -103,17 +104,19 @@ def main():
         pos_obj1_init = gs.tensor([0.3, 0.3, 0.1], requires_grad=True)
         obj1.set_position(pos_obj1_init)
         loss = 0
-        v_list = []
-        w_list = []
+
         for i in range(horizon):
-            v_i = gs.tensor([0.0, 1.0, 0.0], requires_grad=True)
+            v_i = v_list[i]
+
+            # uncomment this to set an angular velocity
             # w_i = gs.tensor([2.0, 0.0, 0.0], requires_grad=True)
             # stick.set_velocity(vel=v_i, ang=w_i)
+
             stick.set_velocity(vel=v_i)
             v_list.append(v_i)
-            # w_list.append(w_i)
 
             scene.step()
+            # uncomment this to render images
             # img0 = cam_0.render()
             # img1 = cam_1.render()
 
@@ -139,13 +142,8 @@ def main():
         for v_i in v_list:
             print(v_i.grad)
             v_i.zero_grad()
-        # for w_i in w_list:
-        #     print(w_i.grad)
-        #     w_i.zero_grad()
-        print(init_pos.grad)
-        print(v_obj1_init.grad)
-        print(pos_obj1_init.grad)
         init_pos.zero_grad()
+        print(loss.item())
 
 
 if __name__ == "__main__":

@@ -80,7 +80,7 @@ def parse_urdf(morph, surface):
         l_info["name"] = link.name
 
         # we compute urdf's invweight later
-        l_info["invweight"] = -1.0
+        l_info["invweight"] = np.full((2,), fill_value=-1.0)
 
         if link.inertial is None:
             l_info["inertial_pos"] = gu.zero_pos()
@@ -94,7 +94,7 @@ def parse_urdf(morph, surface):
             l_info["inertial_i"] = link.inertial.inertia
             l_info["inertial_mass"] = link.inertial.mass
 
-        l_info["g_infos"] = list()
+        l_info["g_infos"] = []
 
         for geom in link.collisions + link.visuals:
             geom_is_col = not isinstance(geom, urdfpy.Visual)

@@ -66,22 +66,24 @@ class PBDTetEntity(ParticleEntity):
         mat_type: ti.i32,
         active: ti.i32,
     ):
-        for i_v_ in range(self.n_particles):
-            i_v = i_v_ + self._particle_start
+        for i_p_ in range(self.n_particles):
+            i_p = i_p_ + self._particle_start
             for j in ti.static(range(3)):
-                self.solver.particles_info[i_v].pos_rest[j] = particles[i_v_, j]
-            self.solver.particles_info[i_v].mat_type = mat_type
-            self.solver.particles_info[i_v].mass = self._particle_mass
-            self.solver.particles_info[i_v].mu_s = self.material.static_friction
-            self.solver.particles_info[i_v].mu_k = self.material.kinetic_friction
+                self.solver.particles_info[i_p].pos_rest[j] = particles[i_p_, j]
+            self.solver.particles_info[i_p].mat_type = mat_type
+            self.solver.particles_info[i_p].mass = self._particle_mass
+            self.solver.particles_info[i_p].mu_s = self.material.static_friction
+            self.solver.particles_info[i_p].mu_k = self.material.kinetic_friction
 
+        for i_p_, i_b in ti.ndrange(self.n_particles, self._sim._B):
+            i_p = i_p_ + self._particle_start
             for j in ti.static(range(3)):
-                self.solver.particles[i_v].pos[j] = particles[i_v_, j]
-            self.solver.particles[i_v].vel = ti.Vector.zero(gs.ti_float, 3)
-            self.solver.particles[i_v].dpos = ti.Vector.zero(gs.ti_float, 3)
-            self.solver.particles[i_v].free = True
+                self.solver.particles[i_p, i_b].pos[j] = particles[i_p_, j]
+            self.solver.particles[i_p, i_b].vel = ti.Vector.zero(gs.ti_float, 3)
+            self.solver.particles[i_p, i_b].dpos = ti.Vector.zero(gs.ti_float, 3)
+            self.solver.particles[i_p, i_b].free = True
 
-            self.solver.particles_ng[i_v].active = active
+            self.solver.particles_ng[i_p, i_b].active = active
 
         for i_e_ in range(self.n_edges):
             i_e = i_e_ + self._edge_start
@@ -101,20 +103,20 @@ class PBDTetEntity(ParticleEntity):
 
     @ti.kernel
     def _kernel_get_particles(self, particles: ti.types.ndarray()):
-        for i in range(self.n_particles):
+        for i_p, i_b in ti.ndrange(self.n_particles, self._sim._B):
             for j in ti.static(range(3)):
-                particles[i, j] = self.solver.particles[i + self._particle_start].pos[j]
+                particles[i_b, i_p, j] = self.solver.particles[i_p + self._particle_start, i_b].pos[j]
 
     @gs.assert_built
-    def find_closest_particle(self, pos):
-        cur_particles = self.get_particles()
+    def find_closest_particle(self, pos, b=0):
+        cur_particles = self.get_particles()[b]
         distances = np.linalg.norm(cur_particles - np.array(pos), axis=1)
         closest_idx = np.argmin(distances)
         return closest_idx
 
     @gs.assert_built
-    def fix_particle(self, particle_idx):
-        self.solver.fix_particle(particle_idx + self._particle_start)
+    def fix_particle(self, particle_idx, i_b):
+        self.solver.fix_particle(particle_idx + self._particle_start, i_b)
 
     @gs.assert_built
     def set_particle_position(self, particle_idx, pos):
@@ -227,9 +229,9 @@ class PBD2DEntity(PBDTetEntity):
         self,
         f: ti.i32,
     ):
-        for i_v_ in range(self.n_particles):
-            i_v = i_v_ + self._particle_start
-            self.solver.particles_info[i_v].air_resistance = self.material.air_resistance
+        for i_p_ in range(self.n_particles):
+            i_p = i_p_ + self._particle_start
+            self.solver.particles_info[i_p].air_resistance = self.material.air_resistance
 
     @ti.kernel
     def _kernel_add_inner_edges_to_solver(
@@ -299,14 +301,8 @@ class PBD3DEntity(PBDTetEntity):
             gs.raise_exception("Input mesh has zero volume.")
         self._mass = self._vmesh.volume * self.material.rho
 
-        self._particles, self._elems = self._mesh.tetrahedralize(
-            order=getattr(self.morph, "order", 1),
-            mindihedral=getattr(self.morph, "mindihedral", 10),
-            minratio=getattr(self.morph, "minratio", 1.1),
-            nobisect=getattr(self.morph, "nobisect", True),
-            quality=getattr(self.morph, "quality", True),
-            verbose=getattr(self.morph, "verbose", 0),
-        )
+        tet_cfg = mu.generate_tetgen_config_from_morph(self.morph)
+        self._particles, self._elems = self._mesh.tetrahedralize(tet_cfg)
         self._edges = np.array(
             list(
                 set(
@@ -397,25 +393,27 @@ class PBDParticleEntity(ParticleEntity):
         mat_type: ti.i32,
         active: ti.i32,
     ):
-        for i_v_ in range(self.n_particles):
-            i_v = i_v_ + self._particle_start
+        for i_p_ in range(self._n_particles):
+            i_p = i_p_ + self._particle_start
             for j in ti.static(range(3)):
-                self.solver.particles_info[i_v].pos_rest[j] = particles[i_v_, j]
+                self.solver.particles_info[i_p].pos_rest[j] = particles[i_p_, j]
 
-            self.solver.particles_info[i_v].mat_type = mat_type
-            self.solver.particles_info[i_v].mass = rho
-            self.solver.particles_info[i_v].rho_rest = rho
+            self.solver.particles_info[i_p].mat_type = mat_type
+            self.solver.particles_info[i_p].mass = rho
+            self.solver.particles_info[i_p].rho_rest = rho
 
-            self.solver.particles_info[i_v].density_relaxation = self.material.density_relaxation
-            self.solver.particles_info[i_v].viscosity_relaxation = self.material.viscosity_relaxation
+            self.solver.particles_info[i_p].density_relaxation = self.material.density_relaxation
+            self.solver.particles_info[i_p].viscosity_relaxation = self.material.viscosity_relaxation
 
+        for i_p_, i_b in ti.ndrange(self.n_particles, self._sim._B):
+            i_p = i_p_ + self._particle_start
             for j in ti.static(range(3)):
-                self.solver.particles[i_v].pos[j] = particles[i_v_, j]
-            self.solver.particles[i_v].vel = ti.Vector.zero(gs.ti_float, 3)
-            self.solver.particles[i_v].dpos = ti.Vector.zero(gs.ti_float, 3)
-            self.solver.particles[i_v].free = True
+                self.solver.particles[i_p, i_b].pos[j] = particles[i_p_, j]
+            self.solver.particles[i_p, i_b].vel = ti.Vector.zero(gs.ti_float, 3)
+            self.solver.particles[i_p, i_b].dpos = ti.Vector.zero(gs.ti_float, 3)
+            self.solver.particles[i_p, i_b].free = True
 
-            self.solver.particles_ng[i_v].active = active
+            self.solver.particles_ng[i_p, i_b].active = active
 
     @property
     def n_fluid_particles(self):
@@ -455,19 +453,21 @@ class PBDFreeParticleEntity(ParticleEntity):
         mat_type: ti.i32,
         active: ti.i32,
     ):
-        for i_v_ in range(self.n_particles):
-            i_v = i_v_ + self._particle_start
+        for i_p_ in range(self.n_particles):
+            i_p = i_p_ + self._particle_start
             for j in ti.static(range(3)):
-                self.solver.particles_info[i_v].pos_rest[j] = particles[i_v_, j]
+                self.solver.particles_info[i_p].pos_rest[j] = particles[i_p_, j]
 
-            self.solver.particles_info[i_v].mat_type = mat_type
-            self.solver.particles_info[i_v].mass = rho
-            self.solver.particles_info[i_v].rho_rest = rho
+            self.solver.particles_info[i_p].mat_type = mat_type
+            self.solver.particles_info[i_p].mass = rho
+            self.solver.particles_info[i_p].rho_rest = rho
 
+        for i_p_, i_b in ti.ndrange(self.n_particles, self._sim._B):
+            i_p = i_p_ + self._particle_start
             for j in ti.static(range(3)):
-                self.solver.particles[i_v].pos[j] = particles[i_v_, j]
-            self.solver.particles[i_v].vel = ti.Vector.zero(gs.ti_float, 3)
-            self.solver.particles[i_v].dpos = ti.Vector.zero(gs.ti_float, 3)
-            self.solver.particles[i_v].free = True
+                self.solver.particles[i_p, i_b].pos[j] = particles[i_p_, j]
+            self.solver.particles[i_p, i_b].vel = ti.Vector.zero(gs.ti_float, 3)
+            self.solver.particles[i_p, i_b].dpos = ti.Vector.zero(gs.ti_float, 3)
+            self.solver.particles[i_p, i_b].free = True
 
-            self.solver.particles_ng[i_v].active = active
+            self.solver.particles_ng[i_p, i_b].active = active
