@@ -8,6 +8,7 @@
 
 import numpy as np
 from scipy import interpolate
+import random
 # from scipy.interpolate import RegularGridInterpolator
 
 
@@ -149,48 +150,68 @@ def pyramid_sloped_terrain(terrain, slope=1, platform_size=1.0):
     return terrain
 
 
-def discrete_obstacles_terrain(terrain, max_height, min_size, max_size, num_rects, platform_size=1.0):
+def discrete_obstacles_terrain(terrain, slope=-0.5, pit_size_m=0.2, pit_gap_m=0.4, pit_depth_m=0.2, platform_size_m=0.5):
+
     """
-    Generate a terrain with gaps
+    Generate a sloped terrain with uniformly spaced pit holes and a flat platform in the center.
 
     Parameters:
-        terrain (terrain): the terrain
-        max_height (float): maximum height of the obstacles (range=[-max, -max/2, max/2, max]) [meters]
-        min_size (float): minimum size of a rectangle obstacle [meters]
-        max_size (float): maximum size of a rectangle obstacle [meters]
-        num_rects (int): number of randomly generated obstacles
-        platform_size (float): size of the flat platform at the center of the terrain [meters]
+        terrain: terrain object with attributes width, length, height_field_raw, horizontal_scale, vertical_scale
+        slope (float): slope direction and magnitude
+        platform_size_m (float): size of the center flat platform [meters]
+        pit_size_m (float): width/length of each square pit [meters]
+        pit_gap_m (float): spacing between pit centers [meters]
+        pit_depth_m (float): depth of each pit [meters]
     Returns:
-        terrain (SubTerrain): update terrain
+        terrain: modified terrain
     """
-    # switch parameters to discrete units
-    max_height = int(max_height / terrain.vertical_scale)
-    min_size = int(min_size / terrain.horizontal_scale)
-    max_size = int(max_size / terrain.horizontal_scale)
-    platform_size = int(platform_size / terrain.horizontal_scale)
 
-    (i, j) = terrain.height_field_raw.shape
-    height_range = [-max_height, -max_height // 2, max_height // 2, max_height]
-    width_range = range(min_size, max_size, 4)
-    length_range = range(min_size, max_size, 4)
+    width, length = terrain.width, terrain.length
+    center_x = width // 2
+    center_y = length // 2
 
-    for _ in range(num_rects):
-        width = np.random.choice(width_range)
-        length = np.random.choice(length_range)
+    # Convert dimensions to terrain units
+    platform_size = int(platform_size_m / terrain.horizontal_scale)
+    pit_size = int(pit_size_m / terrain.horizontal_scale)
+    pit_gap = int(pit_gap_m / terrain.horizontal_scale)
+    pit_half = pit_size // 2
+    pit_depth = int(pit_depth_m / terrain.vertical_scale)
 
-        # 👉 Check if we can place width, length inside (i,j)
-        if (i - width <= 0) or (j - length <= 0):
-            continue  # cannot place obstacle, skip
+    # Generate pyramid slope
+    x = np.arange(0, terrain.width)
+    y = np.arange(0, terrain.length)
+    xx, yy = np.meshgrid(x, y, sparse=True)
+    xx = (center_x - np.abs(center_x - xx)) / center_x
+    yy = (center_y - np.abs(center_y - yy)) / center_y
+    xx = xx.reshape(terrain.width, 1)
+    yy = yy.reshape(1, terrain.length)
+    max_height = int(slope * (terrain.horizontal_scale / terrain.vertical_scale) * (terrain.width / 2))
+    terrain.height_field_raw[:, :] = (max_height * xx * yy).astype(terrain.height_field_raw.dtype)
 
-        start_i = np.random.choice(range(0, i - width, 4))
-        start_j = np.random.choice(range(0, j - length, 4))
-        terrain.height_field_raw[start_i : start_i + width, start_j : start_j + length] = np.random.choice(height_range)
+    # Flatten the center platform
+    half_platform = platform_size // 2
+    px1 = center_x - half_platform
+    px2 = center_x + half_platform
+    py1 = center_y - half_platform
+    py2 = center_y + half_platform
+    center_height = terrain.height_field_raw[center_x, center_y]
+    terrain.height_field_raw[px1:px2, py1:py2] = center_height
 
-    x1 = (terrain.width - platform_size) // 2
-    x2 = (terrain.width + platform_size) // 2
-    y1 = (terrain.length - platform_size) // 2
-    y2 = (terrain.length + platform_size) // 2
-    terrain.height_field_raw[x1:x2, y1:y2] = 0
+    # Uniform pit placement
+    k = 0
+    for i in range(pit_gap // 2, width, pit_gap):
+        for j in range(pit_gap // 2, length, pit_gap):
+            if (px1 - pit_half <= i <= px2 + pit_half and
+                py1 - pit_half <= j <= py2 + pit_half):
+                continue  # skip the center platform area
+
+            x1 = max(i - pit_half, 0)
+            x2 = min(i + pit_half, width)
+            y1 = max(j - pit_half, 0)
+            y2 = min(j + pit_half, length)
+            if k%2 == 0:
+                terrain.height_field_raw[x1:x2, y1:y2] -= pit_depth
+            k+=1
     return terrain
 
 
@@ -334,170 +355,221 @@ def stepping_stones_terrain(terrain, stone_size, stone_distance, max_height, pla
 
 
 
-def stamble_terrain(terrain, step_height=0.02):
+def stamble_terrain(
+        terrain,
+        patch_size_m=0.4,
+        gap_m=0.1):   
     """
-    Generate stairs
-
-    Parameters:
-        terrain (terrain): the terrain
-        step_width (float):  the width of the step [meters]
-        step_height (float): the step_height [meters]
-        platform_size (float): size of the flat platform at the center of the terrain [meters]
-    Returns:
-        terrain (SubTerrain): update terrain
+    Generate an aggressive terrain with a uniform grid of steps and pits,
+    each separated by a 0.1m gap, and a flat 0.7x0.7m platform in the center.
+    Each patch has a randomly chosen height between 0.05m and 0.15m.
     """
-    # switch parameters to discrete units
-    step_width = 0.1
-    platform_size = 0.7
-    step_width = int(step_width / terrain.horizontal_scale)
-    step_height_ = int(step_height / terrain.vertical_scale)
-    platform_size = int(platform_size / terrain.horizontal_scale)
+    # Parameters
+    platform_size_m = 0.5
+    height_range_m = (0.10, 0.25)
 
-    height = 0
-    start_x = 0
-    stop_x = terrain.width
-    start_y = 0
-    stop_y = terrain.length
-    i = 1
-    counter = 1
-    while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
-        start_x += step_width
-        stop_x -= step_width
-        start_y += step_width
-        stop_y -= step_width
-        terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = step_height_ * i
-        counter +=1
-        if counter%2 == 0:
-          i *= -1
+    # Convert to terrain units
+    patch_size = int(patch_size_m / terrain.horizontal_scale)
+    gap = int(gap_m / terrain.horizontal_scale)
+    platform_size = int(platform_size_m / terrain.horizontal_scale)
+
+    # Terrain size
+    width, length = terrain.width, terrain.length
+    center_x = width // 2
+    center_y = length // 2
+    half_platform = platform_size // 2
+
+    # Clear terrain
+    terrain.height_field_raw[:, :] = 0
+
+    # Place patches in a grid
+    x = 0
+    row = 0
+    while x + patch_size < width:
+        y = 0
+        col = 0
+        while y + patch_size < length:
+            # Patch center
+            patch_cx = x + patch_size // 2
+            patch_cy = y + patch_size // 2
+
+            # Skip platform region
+            if (abs(patch_cx - center_x) < half_platform + gap and
+                abs(patch_cy - center_y) < half_platform + gap):
+                y += patch_size + gap
+                col += 1
+                continue
+
+            # Gap-adjusted bounds
+            x1 = x + gap
+            x2 = min(x + patch_size - gap, width)
+            y1 = y + gap
+            y2 = min(y + patch_size - gap, length)
+
+            # Random height between 5cm and 15cm
+            height_m = random.uniform(*height_range_m)
+            height = int(height_m / terrain.vertical_scale)
+            height = height if (row + col) % 2 == 0 else -height
+
+            if x1 < x2 and y1 < y2:
+                terrain.height_field_raw[x1:x2, y1:y2] += height
+
+            y += patch_size + gap
+            col += 1
+        x += patch_size + gap
+        row += 1
+
+    # Center flat platform
+    x_start = max(0, center_x - half_platform)
+    x_end   = min(width, center_x + half_platform)
+    y_start = max(0, center_y - half_platform)
+    y_end   = min(length, center_y + half_platform)
+    terrain.height_field_raw[x_start:x_end, y_start:y_end] = 0
+
     return terrain
 
 def blocky_terrain(
         terrain,
-        cube_size_m=0.7,     # smallest square patch edge, in metres
-        cube_height_m=0.17):   # |height| ≤ this, in metres
+        patch_size_m=0.4,
+        gap_m=0.1):   
     """
-    Place a single square cube (raised block) at the center of the terrain.
-
-    Parameters:
-    ----------
-    terrain : object
-        Must have:
-        - width, length: dimensions in samples
-        - horizontal_scale: meters per sample
-        - vertical_scale: meters per height unit
-        - height_field_raw: numpy array [width, length], dtype=int
-    cube_size_m : float
-        Physical edge length of the cube
-    cube_height_m : float
-        Height of the cube in meters
+    Generate an aggressive terrain with a uniform grid of steps and pits,
+    each separated by a 0.1m gap, and a flat 0.7x0.7m platform in the center.
+    Each patch has a randomly chosen height between 0.05m and 0.15m.
     """
-    # Convert physical dimensions to index units
-    cube_size = int(cube_size_m / terrain.horizontal_scale)
-    cube_height = int(cube_height_m / terrain.vertical_scale)
+    # Parameters
+    platform_size_m = 0.5
+    height_range_m = (0.10, 0.25)
 
-    # Center of the terrain
-    center_x = terrain.width // 2
-    center_y = terrain.length // 2
+    # Convert to terrain units
+    patch_size = int(patch_size_m / terrain.horizontal_scale)
+    gap = int(gap_m / terrain.horizontal_scale)
+    platform_size = int(platform_size_m / terrain.horizontal_scale)
 
+    # Terrain size
+    width, length = terrain.width, terrain.length
+    center_x = width // 2
+    center_y = length // 2
+    half_platform = platform_size // 2
+
+    # Clear terrain
     terrain.height_field_raw[:, :] = 0
-    # Compute cube bounds (clamped)
-    # --- Raised cube at center ---
-    half = cube_size // 2
-    
-    step_size_for_width = int(terrain.width/4)
-    step_size_for_length = int(terrain.length/4)
-    sign = 1
-    for i in range(step_size_for_length):
-        for j in range(step_size_for_width):
-            x_start = j * 4
-            x_end   = x_start + cube_size
-            y_start = i * 4
-            y_end   = y_start + cube_size
-            terrain.height_field_raw[x_start:x_end, y_start:y_end] = cube_height
-            # sign *= -1
 
-    
-    # Compute cube bounds (clamped)
-    # half = cube_size // 2
-    # --- Lowered cube to the right of center ---
-    x2_start = center_x - 2 
-    x2_end   = x2_start + cube_size
-    y2_start = center_y - 2  # same Y position
-    y2_end   = y2_start + cube_size
+    # Place patches in a grid
+    x = 0
+    row = 0
+    while x + patch_size < width:
+        y = 0
+        col = 0
+        while y + patch_size < length:
+            # Patch center
+            patch_cx = x + patch_size // 2
+            patch_cy = y + patch_size // 2
 
-    # # Clear terrain to base height (optional)
-    # terrain.height_field_raw[:, :] = 0
+            # Skip platform region
+            if (abs(patch_cx - center_x) < half_platform + gap and
+                abs(patch_cy - center_y) < half_platform + gap):
+                y += patch_size + gap
+                col += 1
+                continue
 
-    # Set the cube height
-    # terrain.height_field_raw[x2_start:x2_end, y2_start:y2_end] = -cube_height
+            # Gap-adjusted bounds
+            x1 = x + gap
+            x2 = min(x + patch_size - gap, width)
+            y1 = y + gap
+            y2 = min(y + patch_size - gap, length)
 
+            # Random height between 5cm and 15cm
+            height_m = random.uniform(*height_range_m)
+            height = int(height_m / terrain.vertical_scale)
+            height = height if (row + col) % 2 == 0 else -height
 
-    x3_start = center_x - 4 
-    x3_end   = x3_start + cube_size
-    y3_start = center_y - 4 # same Y position
-    y3_end   = y3_start + cube_size
+            if x1 < x2 and y1 < y2:
+                terrain.height_field_raw[x1:x2, y1:y2] += height
 
-    # # Clear terrain to base height (optional)
-    # terrain.height_field_raw[:, :] = 0
+            y += patch_size + gap
+            col += 1
+        x += patch_size + gap
+        row += 1
 
-    # Set the cube height
-    # terrain.height_field_raw[x3_start:x3_end, y3_start:y3_end] = cube_height
-
-    # # Convert to terrain units
-    # cube_size = int(cube_size_m / terrain.horizontal_scale)
-    # cube_height = int(cube_height_m / terrain.vertical_scale)
-
-    # # Clear the terrain
-    # terrain.height_field_raw[:, :] = 0
-    # i = 1
-    # for x in range(0, terrain.width, cube_size):
-    #     for y in range(0, terrain.length, cube_size):
-    #         x_end = min(x + cube_size, terrain.width)
-    #         y_end = min(y + cube_size, terrain.length)
-    #         terrain.height_field_raw[x:x_end, y:y_end] = cube_height * i
-    #         i   *= -1
-
+    # Center flat platform
+    x_start = max(0, center_x - half_platform)
+    x_end   = min(width, center_x + half_platform)
+    y_start = max(0, center_y - half_platform)
+    y_end   = min(length, center_y + half_platform)
+    terrain.height_field_raw[x_start:x_end, y_start:y_end] = 0
 
     return terrain
 
 
 
 def debug_terrain(terrain):
+    slope=-0.5 
+    platform_size_m=0.5 
+    pit_size_m=0.2
+    pit_gap_m=0.4
+    pit_depth_m=0.3
     """
-    Generate stairs
+    Generate a sloped terrain with uniformly spaced pit holes and a flat platform in the center.
 
     Parameters:
-        terrain (terrain): the terrain
-        step_width (float):  the width of the step [meters]
-        step_height (float): the step_height [meters]
-        platform_size (float): size of the flat platform at the center of the terrain [meters]
+        terrain: terrain object with attributes width, length, height_field_raw, horizontal_scale, vertical_scale
+        slope (float): slope direction and magnitude
+        platform_size_m (float): size of the center flat platform [meters]
+        pit_size_m (float): width/length of each square pit [meters]
+        pit_gap_m (float): spacing between pit centers [meters]
+        pit_depth_m (float): depth of each pit [meters]
     Returns:
-        terrain (SubTerrain): update terrain
+        terrain: modified terrain
     """
-    # switch parameters to discrete units
-    step_width = 0.1
-    step_height = 0.02
-    platform_size = 1.5
-    step_width = int(step_width / terrain.horizontal_scale)
-    step_height = int(step_height / terrain.vertical_scale)
-    platform_size = int(platform_size / terrain.horizontal_scale)
 
-    height = 0
-    start_x = 0
-    stop_x = terrain.width
-    start_y = 0
-    stop_y = terrain.length
-    i = -1
-    while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
-        start_x += step_width
-        stop_x -= step_width
-        start_y += step_width
-        stop_y -= step_width
-        height += step_height
-        terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = step_height * i
-        i *= -1
+    width, length = terrain.width, terrain.length
+    center_x = width // 2
+    center_y = length // 2
+
+    # Convert dimensions to terrain units
+    platform_size = int(platform_size_m / terrain.horizontal_scale)
+    pit_size = int(pit_size_m / terrain.horizontal_scale)
+    pit_gap = int(pit_gap_m / terrain.horizontal_scale)
+    pit_half = pit_size // 2
+    pit_depth = int(pit_depth_m / terrain.vertical_scale)
+
+    # Generate pyramid slope
+    x = np.arange(0, terrain.width)
+    y = np.arange(0, terrain.length)
+    xx, yy = np.meshgrid(x, y, sparse=True)
+    xx = (center_x - np.abs(center_x - xx)) / center_x
+    yy = (center_y - np.abs(center_y - yy)) / center_y
+    xx = xx.reshape(terrain.width, 1)
+    yy = yy.reshape(1, terrain.length)
+    max_height = int(slope * (terrain.horizontal_scale / terrain.vertical_scale) * (terrain.width / 2))
+    terrain.height_field_raw[:, :] = (max_height * xx * yy).astype(terrain.height_field_raw.dtype)
+
+    # Flatten the center platform
+    half_platform = platform_size // 2
+    px1 = center_x - half_platform
+    px2 = center_x + half_platform
+    py1 = center_y - half_platform
+    py2 = center_y + half_platform
+    center_height = terrain.height_field_raw[center_x, center_y]
+    terrain.height_field_raw[px1:px2, py1:py2] = center_height
+
+    # Uniform pit placement
+    k = 0
+    for i in range(pit_gap // 2, width, pit_gap):
+        for j in range(pit_gap // 2, length, pit_gap):
+            if (px1 - pit_half <= i <= px2 + pit_half and
+                py1 - pit_half <= j <= py2 + pit_half):
+                continue  # skip the center platform area
+
+            x1 = max(i - pit_half, 0)
+            x2 = min(i + pit_half, width)
+            y1 = max(j - pit_half, 0)
+            y2 = min(j + pit_half, length)
+            if k%2 == 0:
+                terrain.height_field_raw[x1:x2, y1:y2] -= pit_depth
+            k+=1
     return terrain
-
 
 def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
     """

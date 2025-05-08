@@ -222,12 +222,12 @@ class OnPolicyRunner:
                     record_interval = self.cfg.get("record_interval", -1)
                     send_vieo_flag = False
                     if record_interval > 0:
-                        if it < 2500 and  it % self.save_interval == 0:
-                            send_vieo = True
-                        elif it < 5000 and it % (2*self.save_interval) == 0:
-                            send_vieo = True
-                        elif it % (5*self.save_interval) == 0:
-                            send_vieo = True
+                        if it < 2500 and  it % record_interval == 0:
+                            send_vieo_flag = True
+                        elif it < 5000 and it % (2*record_interval) == 0:
+                            send_vieo_flag = True
+                        elif it % (3*record_interval) == 0:
+                            send_vieo_flag = True
                     if send_vieo_flag:
                         frames = self.env.get_recorded_frames()
                         if frames is not None:

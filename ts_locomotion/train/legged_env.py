@@ -46,6 +46,20 @@ def quaternion_from_euler_tensor(roll_deg, pitch_deg, yaw_deg):
     return torch.stack([qx, qy, qz, qw], dim=-1)
 
 
+def get_height_at_xy(height_field, x, y, horizontal_scale, vertical_scale, center_x, center_y):
+    # Convert world coordinates to heightfield indices
+    mat = np.array([[0, 1/horizontal_scale],
+                    [1/horizontal_scale, 0]])
+    vec = np.array([x+center_x, y+center_y])
+    result = mat @ vec
+    i = int(result[1])
+    j = int(result[0])
+    if 0 <= i < height_field.shape[0] and 0 <= j < height_field.shape[1]:
+        return height_field[i, j] * vertical_scale
+    else:
+        raise ValueError(f"Requested (x={x}, y={y}) is outside the terrain bounds.")
+
+
 class LeggedEnv:
     def __init__(self, num_envs, env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, terrain_cfg, show_viewer=False, device="cuda"):
         self.cfg = {
@@ -109,7 +123,7 @@ class LeggedEnv:
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=40,
             ),
-            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(1))),
+            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(100))),
             rigid_options=gs.options.RigidOptions(
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
@@ -227,8 +241,18 @@ class LeggedEnv:
                 for col in range(self.cols):
                     subterrain_center_x = terrain_origin_x + (col + 0.5) * subterrain_size
                     subterrain_center_y = terrain_origin_y + (row + 0.5) * subterrain_size
-                    subterrain_center_z = (self.height_field[int(subterrain_center_x), int(subterrain_center_y)] ) * vertical_scale 
-                    print(subterrain_center_x, subterrain_center_y, subterrain_center_z)
+                    # subterrain_center_z = (self.height_field[int(subterrain_center_x), int(subterrain_center_y)] ) * vertical_scale 
+                    subterrain_center_z = get_height_at_xy(
+                        self.height_field,
+                        subterrain_center_x,
+                        subterrain_center_y,
+                        horizontal_scale,
+                        vertical_scale,
+                        self.center_x,
+                        self.center_y
+                    )
+                    
+                    print(f"Height at ({subterrain_center_x},{subterrain_center_y}): {subterrain_center_z}")
                     self.subterrain_centers.append((subterrain_center_x, subterrain_center_y, subterrain_center_z))
 
             # Print the centers
@@ -456,11 +480,20 @@ class LeggedEnv:
 
 
     def get_terrain_height_at(self, x_world, y_world):
-        x_shifted = x_world + self.center_x
-        y_shifted = y_world + self.center_y
+        # Create the transform matrix (same as your NumPy one)
+        s = self.terrain_cfg["horizontal_scale"]
+        mat = torch.tensor([[0.0, 1.0 / s],
+                            [1.0 / s, 0.0]], device=self.device)
 
-        j = (x_shifted / self.terrain_cfg["horizontal_scale"]).long().clamp_(0, self.height_field_tensor.shape[1]-1)
-        i = (y_shifted / self.terrain_cfg["horizontal_scale"]).long().clamp_(0, self.height_field_tensor.shape[0]-1)
+        # Shift world position by center
+        vec = torch.stack([x_world + self.center_x,
+                        y_world + self.center_y])
+
+        # Apply transformation
+        result = mat @ vec
+
+        i = result[1].long().clamp(0, self.height_field_tensor.shape[0] - 1)
+        j = result[0].long().clamp(0, self.height_field_tensor.shape[1] - 1)
 
         return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
 

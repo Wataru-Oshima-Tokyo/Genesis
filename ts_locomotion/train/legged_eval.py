@@ -28,7 +28,8 @@ def main():
     log_dir = os.path.join(log_dir, most_recent_subdir)
     env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, train_cfg, terrain_cfg = pickle.load(open(f"{log_dir}/cfgs.pkl", "rb"))
     reward_cfg["reward_scales"] = {}
-
+    train_cfg["policy"]["class_name"] = "ActorCritic"      # or "ActorCriticRecurrent"
+    train_cfg["algorithm"]["class_name"] = "PPO"          # ← add this line
     env = LeggedEnv(
         num_envs=1,
         env_cfg=env_cfg,
@@ -41,7 +42,7 @@ def main():
     )
 
     
-
+    print(train_cfg)
     runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda:0")
 
     # List all files in the most recent subdirectory
@@ -78,7 +79,7 @@ def main():
     with torch.no_grad():
         while True:
             actions = policy(obs)
-            obs, _, rews, dones, infos = env.step(actions)
+            obs, rews, dones, infos = env.step(actions)
 
 
 if __name__ == "__main__":

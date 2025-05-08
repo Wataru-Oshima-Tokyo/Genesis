@@ -193,18 +193,14 @@ def get_cfgs():
             "collision": -2.0,
             # "action_rate": -0.1,
             "contact_no_vel": -0.002,
-            "dof_acc": -2.5e-6,
+            "dof_acc": -2.5e-7,
             # "hip_pos": -.1, #-1.0
             "contact": 0.01,
             "dof_pos_limits": -3.0,
-            "dof_vel": -1.0e-3,
+            "dof_vel": -1.0e-5,
             'torques': -0.0001,
             "termination": -30.0,
-            # "feet_air_time": -1.0,
-            # "front_feet_swing_height_from_base": -5.0, #-10.0
-            # "front_feet_swing_height_from_world": -10.0, #-10.0
-            "feet_contact_forces": -1.0,
-            # "rear_feet_swing_height": -0.1, #-10.0
+            # "feet_contact_forces": -1.0,
         },
     }
     command_cfg = {
@@ -234,13 +230,6 @@ def get_cfgs():
         "rows": 2,   #should be more than 5
         "selected_terrains":{
             "flat_terrain" : {"probability": 0.1},
-            # "stamble_terrain" : {"probability": 0.3},
-            # "pyramid_sloped_terrain" : {"probability": 0.1},
-            # # "random_uniform_terrain" : {"probability": 0.1},
-            # # "fractal_terrain" : {"probability": 0.1},
-            # "pyramid_stairs_terrain" : {"probability": 0.5},
-            # "wave_terrain": {"probability": 0.1},
-            # "pyramid_steep_down_stairs_terrain" : {"probability": .5},
         }
     }
 
@@ -313,11 +302,13 @@ def main():
     )
 
 
-    train_cfg["logger"] = "wandb"
-    train_cfg["user_name"] = args.wandb_username
-    train_cfg["wandb_project"] = wand_project_name
-    train_cfg["record_interval"] =  50
-    train_cfg["run_name"] =  args.exp_name
+    train_cfg.update(
+        logger="wandb",
+        record_interval=50,
+        user_name=args.wandb_username,
+        wandb_project=wand_project_name,
+        run_name=args.exp_name,
+    )
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
 

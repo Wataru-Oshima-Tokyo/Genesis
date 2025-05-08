@@ -152,7 +152,7 @@ def get_cfgs():
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": True,
+        "randomize_rot": False,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-180, 180],
@@ -186,20 +186,19 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -0.001, #-5.0
-            "relative_base_height": -20.0, # -30.0
-            "orientation": -0.1, #-30.0
-            "ang_vel_xy": -0.0001,
-            "collision": -2.0,
-            # "action_rate": -0.1,
+            "lin_vel_z": -0.00001, #-5.0
+            "relative_base_height": -1.0, # -30.0
+            "orientation": -0.001, #-30.0
+            "ang_vel_xy": -0.001,
+            "collision": -0.5,
             "contact_no_vel": -0.002,
-            "dof_acc": -2.5e-7,
+            "dof_acc": -2.5e-6,
             "contact": 0.01,
             "dof_pos_limits": -3.0,
-            "dof_vel": -1.0e-5,
+            "dof_vel": -1.0e-3,
             'torques': -0.0001,
             "termination": -30.0,
-            # "feet_contact_forces": -0.01,
+            "feet_contact_forces": -0.001,
         },
     }
     command_cfg = {
@@ -228,10 +227,15 @@ def get_cfgs():
         "cols": 5,  #should be more than 5
         "rows": 5,   #should be more than 5
         "selected_terrains":{
-            "flat_terrain" : {"probability": 0.1},
-            "blocky_terrain" : {"probability": 0.5},
-            "stamble_terrain" : {"probability": 0.5},
-            "discrete_obstacles_terrain" : {"probability": 0.5},
+            # "flat_terrain" : {"probability": 0.1},
+            "stamble_terrain" : {"probability": 0.1},
+            "pyramid_sloped_terrain" : {"probability": 0.1},
+            "discrete_obstacles_terrain" : {"probability": 0.1},
+            # "random_uniform_terrain" : {"probability": 0.1},
+            # "fractal_terrain" : {"probability": 0.1},
+            "pyramid_stairs_terrain" : {"probability": 0.2},
+            "blocky_terrain": {"probability": 0.1},
+            "pyramid_steep_down_stairs_terrain" : {"probability": 0.1},
         }
     }
 
@@ -304,12 +308,6 @@ def main():
     )
 
 
-    train_cfg["logger"] = "wandb"
-    train_cfg["user_name"] = args.wandb_username
-    train_cfg["wandb_project"] = wand_project_name
-    train_cfg["record_interval"] =  50
-    train_cfg["run_name"] =  args.exp_name
-
     train_cfg.update(
         logger="wandb",
         record_interval=50,
@@ -317,7 +315,6 @@ def main():
         wandb_project=wand_project_name,
         run_name=args.exp_name,
     )
-
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
 

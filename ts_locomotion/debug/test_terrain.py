@@ -5,18 +5,23 @@ import torch
 import time
 
 def get_height_at_xy(height_field, x, y, horizontal_scale, vertical_scale, center_x, center_y):
-    # shift x, y by terrain's center
-    x_shifted = x + center_x
-    y_shifted = y + center_y
+    # Convert world coordinates to heightfield indices
+    # i = int(x / horizontal_scale)  # X to col
+    # j = int(y  / horizontal_scale)  # Y to row 
 
-    j = int(x_shifted / horizontal_scale)
-    i = int(y_shifted / horizontal_scale)
 
+    mat = np.array([[0, 1/horizontal_scale],
+                    [1/horizontal_scale, 0]])
+    vec = np.array([x+center_x, y+center_y])
+    result = mat @ vec
+    i = int(result[1])
+    j = int(result[0])
     if 0 <= i < height_field.shape[0] and 0 <= j < height_field.shape[1]:
-        z = height_field[i, j] * vertical_scale
-        return z
+        return height_field[i, j] * vertical_scale
     else:
         raise ValueError(f"Requested (x={x}, y={y}) is outside the terrain bounds.")
+
+        
 
 def main():
     parser = argparse.ArgumentParser()
@@ -37,10 +42,12 @@ def main():
     )
 
     ########################## parameters ##########################
+    n = 1
+    m = 1
     subterrain_size = 3.0
     horizontal_scale = 0.05
     vertical_scale = 0.005
-    n_subterrains = (1, 1)
+    n_subterrains = (n, m)
 
     total_width = n_subterrains[0] * subterrain_size
     total_height = n_subterrains[1] * subterrain_size
@@ -48,24 +55,58 @@ def main():
     center_x = total_width / 2
     center_y = total_height / 2
 
-    grid = [[None for _ in range(1)] for _ in range(1)]
-    grid[0][0] = "pyramid_steep_down_stairs_terrain"
-    # grid[0][1] = "discrete_obstacles_terrain"
-    # grid[1][0] = "wave_terrain"
-    # grid[1][1] = "pyramid_steep_down_stairs_terrain"
+    grid = [[None for _ in range(m)] for _ in range(n)]
+    grid[0][0] = "discrete_obstacles_terrain"
+    # grid[0][1] = "flat_terrain"
+    # grid[0][2] = "pyramid_steep_down_stairs_terrain"
+    # grid[1][0] = "pyramid_steep_down_stairs_terrain"
+    # grid[1][1] = "flat_terrain"
+    # grid[1][2] = "pyramid_down_stairs_terrain"
     ########################## create terrain ##########################
-    terrain = scene.add_entity(
-        morph = gs.morphs.Terrain(
+
+
+    terrain =  gs.morphs.Terrain(
             pos=(-center_x, -center_y, 0),
             subterrain_size=(subterrain_size, subterrain_size),
             n_subterrains=n_subterrains,
             horizontal_scale=horizontal_scale,
             vertical_scale=vertical_scale,
             subterrain_types=grid,
+        )
+
+    global_terrain = scene.add_entity(terrain)
+    # scene.add_entity(terrain)
+    ball1 = scene.add_entity(
+        gs.morphs.Sphere(
+            radius=0.1,
+            pos=(1.0, 1.0, 1.0),
         ),
     )
-    # scene.add_entity(terrain)
-    ball = scene.add_entity(
+    ball2 = scene.add_entity(
+        gs.morphs.Sphere(
+            radius=0.1,
+            pos=(1.0, 1.0, 1.0),
+        ),
+    )
+    ball3 = scene.add_entity(
+        gs.morphs.Sphere(
+            radius=0.1,
+            pos=(1.0, 1.0, 1.0),
+        ),
+    )
+    ball4 = scene.add_entity(
+        gs.morphs.Sphere(
+            radius=0.1,
+            pos=(1.0, 1.0, 1.0),
+        ),
+    )
+    ball5 = scene.add_entity(
+        gs.morphs.Sphere(
+            radius=0.1,
+            pos=(1.0, 1.0, 1.0),
+        ),
+    )
+    ball6 = scene.add_entity(
         gs.morphs.Sphere(
             radius=0.1,
             pos=(1.0, 1.0, 1.0),
@@ -75,39 +116,48 @@ def main():
     scene.build()
 
     ########################## get heightfield ##########################
-    height_field = terrain.geoms[0].metadata["height_field"]
+    height_field = global_terrain.geoms[0].metadata["height_field"]
 
     ########################## query height ##########################
-    x_query = 0.0
-    y_query = 0.0
-    z_query = get_height_at_xy(height_field, x_query, y_query, horizontal_scale, vertical_scale, center_x, center_y)
+    # x_query = 0.0
+    # y_query = 0.0
+    # z_query = get_height_at_xy(height_field, x_query, y_query, horizontal_scale, vertical_scale, center_x, center_y)
     # print(f"Height at ({x_query},{y_query}): {z_query}")
 
-    ########################## add a ball ##########################
-    ball.set_pos(torch.tensor((x_query, y_query, z_query + 0.4)))
+    # ########################## add a ball ##########################
+    # ball.set_pos(torch.tensor((x_query, y_query, z_query + 0.4)))
     ########################## simulation loop ##########################
+    balls = [ball1, ball2, ball3, ball4, ball5, ball6]
+    k =0
+    terrain_origin_x, terrain_origin_y, terrain_origin_z = terrain.pos
+    print(f"terrain_origin_x & terrain_origin_y are ({terrain_origin_x},{terrain_origin_y})")
+    print(height_field.shape)
+    for i in range(n_subterrains[0]):   
+        for j in range(n_subterrains[1]):       
+            subterrain_center_x = terrain_origin_x + (i + 0.5) * subterrain_size
+            subterrain_center_y = terrain_origin_y + (j + 0.5) * subterrain_size
+
+            subterrain_center_z = get_height_at_xy(
+                height_field,
+                subterrain_center_x,
+                subterrain_center_y,
+                horizontal_scale,
+                vertical_scale,
+                center_x,
+                center_y
+            )
+            balls[k].set_pos(torch.tensor((subterrain_center_x, subterrain_center_y, subterrain_center_z + 0.4)))
+            print(f"Height at ({subterrain_center_x},{subterrain_center_y}): {subterrain_center_z}")
+            k += 1
+
+    # for i in range(height_field[0]):
+    #     for j in range(height_field[1]):
+    #         print(f"Height at ({i},{j}): {height_field[i, j] * vertical_scale}")
+
+
     for step in range(10000):
-        # Get current position of the ball
-        pos = ball.get_pos()  # returns torch.tensor([x, y, z])
-        x = pos[0].item()
-        y = pos[1].item()
-        z = pos[2].item()
-
-        # Get terrain height at (x, y)
-        try:
-            terrain_z = get_height_at_xy(height_field, x, y, horizontal_scale, vertical_scale, center_x, center_y)
-        except ValueError as e:
-            print(f"[Step {step}] Position ({x:.3f}, {y:.3f}) out of bounds: {e}")
-            terrain_z = float('nan')
-
-        # Compute height difference
-        height_diff = z - terrain_z if not np.isnan(terrain_z) else float('nan')
-
-        # Print debug info
-        print(f"[Step {step}] Ball pos: ({x:.3f}, {y:.3f}, {z:.3f}) | Terrain height: {terrain_z:.3f} | Height diff: {height_diff:.3f}")
-
         scene.step()
-        time.sleep(5)
+        time.sleep(10)
 
 if __name__ == "__main__":
     main()
