@@ -110,8 +110,15 @@ class LeggedEnv:
                 int(self.min_delay / self.dt), self.max_delay_steps + 1,
                 (self.num_envs, self.num_actions), device=self.device
             )
-            print("Enabled random delay")
+            print("Enabled random motor delay")
         # create scene
+        
+        self.terrain_type = terrain_cfg["terrain_type"]
+        visualized_number = num_envs
+        if visualized_number > 100:
+          visualized_number = 100
+        if self.terrain_type == "plane" and visualized_number > 3:
+          visualized_number = 3
         self.scene = gs.Scene(
             sim_options=gs.options.SimOptions(
                 dt=sim_dt,
@@ -123,12 +130,12 @@ class LeggedEnv:
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=40,
             ),
-            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(100))),
+            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(visualized_number))),
             rigid_options=gs.options.RigidOptions(
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
                 enable_collision=True,
-                enable_self_collision=True,
+                enable_self_collision=False,
                 enable_joint_limit=True,
             ),
             show_viewer=False,
@@ -158,7 +165,6 @@ class LeggedEnv:
         self._recorded_frames = []
 
 
-        self.terrain_type = terrain_cfg["terrain_type"]
         subterrain_size = terrain_cfg["subterrain_size"]
         horizontal_scale = terrain_cfg["horizontal_scale"]
         vertical_scale = terrain_cfg["vertical_scale"]        
@@ -479,7 +485,47 @@ class LeggedEnv:
 
 
 
+    # def get_terrain_height_at(self, x_world, y_world):
+    #     if self.terrain_cfg["terrain_type"] == "plane":
+    #       return torch.tensor(0.0, device=self.device)
+    #     # Create the transform matrix (same as your NumPy one)
+    #     s = self.terrain_cfg["horizontal_scale"]
+    #     mat = torch.tensor([[0.0, 1.0 / s],
+    #                         [1.0 / s, 0.0]], device=self.device)
+
+    #     # Shift world position by center
+    #     vec = torch.stack([x_world + self.center_x,
+    #                     y_world + self.center_y])
+
+    #     # Apply transformation
+    #     result = mat @ vec
+
+    #     i = result[1].long().clamp(0, self.height_field_tensor.shape[0] - 1)
+    #     j = result[0].long().clamp(0, self.height_field_tensor.shape[1] - 1)
+
+    #     return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
+
     def get_terrain_height_at(self, x_world, y_world):
+        if self.terrain_cfg["terrain_type"] == "plane":
+            return torch.zeros_like(x_world, device=self.device)
+    
+        s = self.terrain_cfg["horizontal_scale"]
+    
+        # Convert scalar inputs to tensors
+        x_world = torch.as_tensor(x_world, device=self.device)
+        y_world = torch.as_tensor(y_world, device=self.device)
+    
+        x_shifted = x_world + self.center_x
+        y_shifted = y_world + self.center_y
+    
+        i = (y_shifted / s).long().clamp(0, self.height_field_tensor.shape[0] - 1)
+        j = (x_shifted / s).long().clamp(0, self.height_field_tensor.shape[1] - 1)
+    
+        return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
+
+    def get_terrain_height_at_for_base(self, x_world, y_world):
+        if self.terrain_cfg["terrain_type"] == "plane":
+          return torch.tensor(0.0, device=self.device)
         # Create the transform matrix (same as your NumPy one)
         s = self.terrain_cfg["horizontal_scale"]
         mat = torch.tensor([[0.0, 1.0 / s],
@@ -496,6 +542,7 @@ class LeggedEnv:
         j = result[0].long().clamp(0, self.height_field_tensor.shape[1] - 1)
 
         return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
+
 
 
     def _resample_commands_max(self, envs_idx):
@@ -518,7 +565,7 @@ class LeggedEnv:
         return min_val + (max_val - min_val) * skewed_samples
 
     def _resample_commands(self, envs_idx):
-        if False:
+        if True:
             self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
         else:
             self.commands[envs_idx, 0] = self.biased_sample(
@@ -554,9 +601,8 @@ class LeggedEnv:
        
         self.step_period = self.reward_cfg["step_period"]
         self.step_offset = self.reward_cfg["step_offset"]
-        self.step_height_for_front = self.reward_cfg["front_feet_relative_height_from_base"]
-        self.step_height_for_front_from_world = self.reward_cfg["front_feet_relative_height_from_world"]
-        self.step_height_for_rear = self.reward_cfg["rear_feet_relative_height_from_base"]
+        self.step_height_for_front = self.reward_cfg["front_feet_relative_height"]
+        self.step_height_for_rear = self.reward_cfg["rear_feet_relative_height"]
         #todo get he first feet_pos here
         # Get positions for all links and slice using indices
         all_links_pos = self.robot.get_links_pos()
@@ -751,14 +797,15 @@ class LeggedEnv:
         # compute observations
         self.obs_buf = torch.cat(
             [
-                # self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
+                # self.base_lin_vel * self.obs_scales["lin_vel"],  # 3
+                self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
                 self.projected_gravity,  # 3
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
                 # self.torques * self.obs_scales["torques"],  # 12 ← NEW
                 self.actions,  # 12
-                # sin_phase, #4
+                # sin_phase, #4no
                 # cos_phase #4
             ],
             axis=-1,
@@ -772,7 +819,6 @@ class LeggedEnv:
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
-                self.torques * self.obs_scales["torques"],           # 12 ← NEW
                 self.actions,  # 12
                 sin_phase, #4
                 cos_phase #4
@@ -827,12 +873,13 @@ class LeggedEnv:
         noise_vec = torch.zeros_like(self.obs_buf[0])
         self.add_noise = self.noise_cfg["add_noise"]
         noise_level =self.noise_cfg["noise_level"]
+        # noise_vec[:3] = self.noise_scales["lin_vel"] * noise_level * self.obs_scales["lin_vel"]
         noise_vec[:3] = self.noise_scales["ang_vel"] * noise_level * self.obs_scales["ang_vel"]
         noise_vec[3:6] = self.noise_scales["gravity"] * noise_level
         noise_vec[6:9] = 0. # commands
         noise_vec[9:9+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
         noise_vec[9+self.num_actions:9+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
-        # noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
+        noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
         # noise_vec[9+4*self.num_actions:9+4*self.num_actions+8] = 0. # sin/cos phase
         return noise_vec
 
@@ -961,7 +1008,6 @@ class LeggedEnv:
         self._resample_commands(envs_idx)
         self._randomize_rigids(envs_idx)
         self.extras["episode"] = {}
-        mean_total_reward = 0
         for key in self.episode_sums.keys():
             self.extras["episode"]["rew_" + key] = (
                 torch.mean(self.episode_sums[key][envs_idx]).item() / self.env_cfg["episode_length_s"]
@@ -1221,7 +1267,7 @@ class LeggedEnv:
 
     def _reward_relative_base_height(self):
         # --- 現在の相対高さ --------------------------------------------------
-        terrain_h = self.get_terrain_height_at(self.base_pos[:, 0], self.base_pos[:, 1])
+        terrain_h = self.get_terrain_height_at_for_base(self.base_pos[:, 0], self.base_pos[:, 1])
         rel_h     = self.base_pos[:, 2] - terrain_h          # shape = (N,)
 
         # --- 目標との差分 (低すぎるときだけ) ---------------------------------
@@ -1230,8 +1276,8 @@ class LeggedEnv:
 
         # --- ピッチ角が ±10° 以内の環境だけ有効にする -------------------------
         # base_euler[:, 1] は pitch (deg) で格納されている前提
-        pitch_ok = (torch.abs(self.base_euler[:, 1]) < 10.0) # Bool tensor shape = (N,)
-        penalty  = penalty * pitch_ok.float()                # True →そのまま, False→0
+        # pitch_ok = (torch.abs(self.base_euler[:, 1]) < 10.0) # Bool tensor shape = (N,)
+        # penalty  = penalty * pitch_ok.float()                # True →そのまま, False→0
         return penalty
 
     def _reward_collision(self):
@@ -1248,7 +1294,6 @@ class LeggedEnv:
     def _reward_contact_no_vel(self):
         # Penalize contact with no velocity
         contact = torch.norm(self.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
-        # print(contact)
         contact_feet_vel = self.feet_vel * contact.unsqueeze(-1)
         penalize = torch.square(contact_feet_vel[:, :, :3])
         return torch.sum(penalize, dim=(1,2))
@@ -1276,25 +1321,187 @@ class LeggedEnv:
 
 
 
-    def _reward_front_feet_swing_height_from_base(self):
-        # Get contact forces and determine which feet are in contact
+    def _reward_front_feet_swing_height(self):
+        # 地面との接触判定（front feet）
         contact = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0
-        pos_error = torch.square((self.step_height_for_front - self.front_feet_pos_base[:, :, 2]) * ~contact)
-        return torch.sum(pos_error, dim=1)
+        
+        # 前足の位置 (z成分)
+        z = self.feet_front_pos[:, :, 2]
+
+        # 地形の高さ
+        terrain_h = self.get_terrain_height_at(
+            self.feet_front_pos[:, :, 0],
+            self.feet_front_pos[:, :, 1]
+        )
+
+        # 高さ差（地面との相対高度）
+        rel_h = z - terrain_h  # [num_envs, 2]
+
+        # 前足の速度（x方向）を feet_vel から抽出
+        front_feet_vel = self.feet_vel[:, :2, :]          # shape (N, 2, 3)
+        foot_vel_x     = front_feet_vel[:, :, 0]          # x‑velocity
+        # 条件：接地していないかつ前進中
+        swing_forward = (~contact) & (foot_vel_x > 0.05)
+
+        # 高さが足りない場合にペナルティ
+        height_error = torch.relu(self.step_height_for_front - rel_h)
+        pos_error = height_error * swing_forward
+        # 報酬（低すぎるスイング足をペナルティ）
+        reward = torch.sum(pos_error, dim=1)
+        return reward
 
 
-    def _reward_front_feet_swing_height_from_world(self):
-        contact = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0
-        pos_error = torch.square(self.feet_front_pos[:, :, 2] - self.step_height_for_front_from_world) * ~contact
-        return torch.sum(pos_error, dim=(1))
+    def _reward_front_feet_clearance(self):
+      """
+      Encourage front feet to swing backward and lift off the terrain.
+      - Reward grows quadratically with height (above 5 cm).
+      - Reward is capped at 0.0225 once the height exceeds 20 cm.
+      """
+      # 1) Contact state
+      contact = torch.norm(
+          self.contact_forces[:, self.feet_front_indices, :3], dim=2
+      ) > 1.0  # shape: (N, 2)
+  
+      # 2) Clearance above terrain
+      z = self.feet_front_pos[:, :, 2]
+      terrain_h = self.get_terrain_height_at(
+          self.feet_front_pos[:, :, 0],
+          self.feet_front_pos[:, :, 1]
+      )
+      rel_h = z - terrain_h  # shape: (N, 2)
+  
+      # 3) Check if rear feet are swinging (not in contact and vx nonzero)
+      foot_vel_x = self.feet_vel[:, :2, 0]  # rear feet vx (feet 2 and 3)
+      swing_fwd = (~contact) & (foot_vel_x > 0.05)  # (N, 2)
+  
+      # 4) Quadratic reward logic
+      clearance_start = 0.05         # reward begins above 5 cm
+      max_reward_height = 0.20       # cap reward at 20 cm
+      max_bonus = (max_reward_height - clearance_start) ** 2  # = 0.0225
+  
+      above_target = torch.clamp(rel_h - clearance_start, min=0.0)  # (N, 2)
+      bonus = above_target.pow(2)
+      bonus = torch.clamp(bonus, max=max_bonus)  # limit growth
+  
+      # Apply only during swing
+      bonus = bonus * swing_fwd
+  
+      # Sum across both rear feet
+      reward = torch.sum(bonus, dim=1)  # (N,)
+  
+      # Debug for env 1
+      # idx = 1
+      # if idx < reward.shape[0]:
+      #     print("\n[DEBUG] Rear Foot Clearance (env 1)")
+      #     print("Contact:", contact[idx].cpu().numpy())
+      #     print("rel_h:", rel_h[idx].cpu().numpy())
+      #     print("vx:", foot_vel_x[idx].cpu().numpy())
+      #     print("swing_fwd:", swing_fwd[idx].cpu().numpy())
+      #     print("bonus (per foot):", bonus[idx].cpu().numpy())
+      #     print("Final reward:", reward[idx].item())
+  
+      return reward
+
+    def _reward_rear_feet_clearance(self):
+      """
+      Encourage rear feet to swing backward and lift off the terrain.
+      - Reward grows quadratically with height (above 5 cm).
+      - Reward is capped at 0.0225 once the height exceeds 20 cm.
+      """
+      # 1) Contact state
+      contact = torch.norm(
+          self.contact_forces[:, self.feet_rear_indices, :3], dim=2
+      ) > 1.0  # shape: (N, 2)
+  
+      # 2) Clearance above terrain
+      z = self.feet_rear_pos[:, :, 2]
+      terrain_h = self.get_terrain_height_at(
+          self.feet_rear_pos[:, :, 0],
+          self.feet_rear_pos[:, :, 1]
+      )
+      rel_h = z - terrain_h  # shape: (N, 2)
+  
+      # 3) Check if rear feet are swinging (not in contact and vx nonzero)
+      foot_vel_x = self.feet_vel[:, 2:, 0]  # rear feet vx (feet 2 and 3)
+      swing_bwd = (~contact) & (foot_vel_x <  -0.05)  # (N, 2)
+  
+      # 4) Quadratic reward logic
+      clearance_start = 0.05         # reward begins above 5 cm
+      max_reward_height = 0.15       # cap reward at 20 cm
+      max_bonus = (max_reward_height - clearance_start) ** 2  # = 0.0225
+  
+      above_target = torch.clamp(rel_h - clearance_start, min=0.0)  # (N, 2)
+      bonus = above_target.pow(2)
+      bonus = torch.clamp(bonus, max=max_bonus)  # limit growth
+  
+      # Apply only during swing
+      bonus = bonus * swing_bwd
+  
+      # Sum across both rear feet
+      reward = torch.sum(bonus, dim=1)  # (N,)
+  
+      # Debug for env 1
+      # idx = 1
+      # if idx < reward.shape[0]:
+      #     print("\n[DEBUG] Rear Foot Clearance (env 1)")
+      #     print("Contact:", contact[idx].cpu().numpy())
+      #     print("rel_h:", rel_h[idx].cpu().numpy())
+      #     print("vx:", foot_vel_x[idx].cpu().numpy())
+      #     print("swing_bwd:", swing_bwd[idx].cpu().numpy())
+      #     print("bonus (per foot):", bonus[idx].cpu().numpy())
+      #     print("Final reward:", reward[idx].item())
+  
+      return reward
+
+
+
+    # def _reward_front_feet_swing_height(self):
+    #     # Determine which rear feet are in contact
+    #     contact = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0
+    
+    #     # Extract x, y, z from rear foot positions (shape: [num_envs, 2])
+    #     x = self.feet_front_pos[:, :, 0]
+    #     y = self.feet_front_pos[:, :, 1]
+    #     z = self.feet_front_pos[:, :, 2]
+    
+    #     # Terrain height under each foot (shape: [num_envs, 2])
+    #     terrain_h = self.get_terrain_height_at(x, y)
+    
+    #     # Relative height above terrain
+    #     rel_h = z - terrain_h
+    
+    #     # Penalize only if the swing foot is *below* the desired height
+    #     height_error = torch.relu(self.step_height_for_front - rel_h)  # only penalize if below
+    #     pos_error = height_error * ~contact  # only apply to swing feet
+    
+    #     reward = torch.sum(pos_error, dim=1)  # sum over the two rear feet
+    #     return reward
+
+
+
+
 
     def _reward_rear_feet_swing_height(self):
-        # Get contact forces and determine which feet are in contact
+        # Determine which rear feet are in contact
         contact = torch.norm(self.contact_forces[:, self.feet_rear_indices, :3], dim=2) > 1.0
-        pos_error = torch.square((self.step_height_for_rear - self.rear_feet_pos_base[:, :, 2]) * ~contact)
-        return torch.sum(pos_error, dim=1)
-
-
+    
+        # Extract x, y, z from rear foot positions (shape: [num_envs, 2])
+        x = self.feet_rear_pos[:, :, 0]
+        y = self.feet_rear_pos[:, :, 1]
+        z = self.feet_rear_pos[:, :, 2]
+    
+        # Terrain height under each foot (shape: [num_envs, 2])
+        terrain_h = self.get_terrain_height_at(x, y)
+    
+        # Relative height above terrain
+        rel_h = z - terrain_h
+    
+        # Penalize only if the swing foot is *below* the desired height
+        height_error = torch.relu(self.step_height_for_rear - rel_h)  # only penalize if below
+        pos_error = height_error * ~contact  # only apply to swing feet
+    
+        reward = torch.sum(pos_error, dim=1)  # sum over the two rear feet
+        return reward
 
     def _reward_orientation(self):
         # Penalize non flat base orientation

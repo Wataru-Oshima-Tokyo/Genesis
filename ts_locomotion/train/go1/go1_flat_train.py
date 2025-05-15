@@ -2,6 +2,8 @@ import argparse
 import os
 import pickle
 import shutil
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from legged_env import LeggedEnv
 from rsl_rl.runners import OnPolicyRunner
@@ -111,8 +113,8 @@ def get_cfgs():
         'feet_link_names': ['foot'],
         'base_link_name': ['base'], 
         "hip_joint_names": [
-            # "FL_hip_joint",
-            # "FR_hip_joint",
+            "FL_hip_joint",
+            "FR_hip_joint",
             "RL_hip_joint",
             "RR_hip_joint",            
         ],
@@ -131,7 +133,7 @@ def get_cfgs():
         'send_timeouts': True,
         "clip_actions": 100.0,
         'control_freq': 40,
-        'decimation': 4,
+        'decimation': 5,
         # random push
         'push_interval_s': 5,
         'max_push_vel_xy': 1.0,
@@ -152,14 +154,14 @@ def get_cfgs():
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": False,
+        "randomize_rot": True,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-180, 180],
     }
     obs_cfg = {
-        "num_obs": 42,
-        "num_privileged_obs": 68,
+        "num_obs": 45,
+        "num_privileged_obs": 56,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
@@ -174,11 +176,10 @@ def get_cfgs():
         "tracking_sigma": 0.25,
         "base_height_target": 0.35,
         "relative_base_height_target": 0.35,
-        "step_period": 0.5, #0.8
-        "step_offset": 0.2, #0.5
-        "front_feet_relative_height_from_base": 0.1,
-        "front_feet_relative_height_from_world": 0.05,
-        "rear_feet_relative_height_from_base": 0.15,
+        "step_period": 1.0, #0.8
+        "step_offset": 0.5, #0.5
+        "front_feet_relative_height": 0.15,
+        "rear_feet_relative_height": 0.15,
         "soft_dof_pos_limit": 0.9,
         "soft_torque_limit": 1.0,
         "only_positive_rewards": True,
@@ -186,31 +187,29 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -0.00001, #-5.0
-            "relative_base_height": -1.0, # -30.0
-            # "base_height": -5.0, # -30.0
-            "orientation": -0.001, #-30.0
-            "ang_vel_xy": -0.001,
-            "collision": -0.5,
-            # "action_rate": -0.1,
-            "contact_no_vel": -0.002,
+            "lin_vel_z": -10.0, #-5.0
+            "relative_base_height": -30.0, # -30.0
+            "orientation": -30.0,
+            "ang_vel_xy": -0.05,
+            "collision": -2.0,
+            "front_feet_clearance": 10.0,
+            "rear_feet_clearance": 10.0,
+            "action_rate": -0.01,
+            # "feet_air_time": 1.0,
+            "contact_no_vel": -0.1,
             "dof_acc": -2.5e-7,
-            # "hip_pos": -.01, #-1.0
-            "contact": 0.01,
-            "dof_pos_limits": -3.0,
-            "dof_vel": -1.0e-5,
+            # "hip_pos": -.1, #-1.0
+            "contact": 0.1,
+            "dof_pos_limits": -10.0,
+            "dof_vel": -1.0e-4,
             'torques': -0.0001,
             "termination": -30.0,
-            # "feet_air_time": -1.0,
-            # "front_feet_swing_height_from_base": -5.0, #-10.0
-            # "front_feet_swing_height_from_world": -10.0, #-10.0
-            # "feet_contact_forces": 0.0,
-            # "rear_feet_swing_height": -0.1, #-10.0
+            "feet_contact_forces": -1.0,
         },
     }
     command_cfg = {
         "num_commands": 3,
-        "lin_vel_x_range": [-1.0, 1.0],
+        "lin_vel_x_range": [-1.0, 1.5],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],
     }
@@ -220,29 +219,21 @@ def get_cfgs():
         "noise_scales":{
             "dof_pos": 0.01,
             "dof_vel": 1.5,
-            "lin_vel": 0.1,
+            "lin_vel": 0.2,
             "ang_vel": 0.2,
             "gravity": 0.05,
             "torques": 0.5,
         }
     }
     terrain_cfg = {
-        "terrain_type": "trimesh", #plane
+        "terrain_type": "plane", #plane
         "subterrain_size": 4.0,
         "horizontal_scale": 0.05,
         "vertical_scale": 0.005,
-        "cols": 5,  #should be more than 5
-        "rows": 5,   #should be more than 5
+        "cols": 2,  #should be more than 5
+        "rows": 2,   #should be more than 5
         "selected_terrains":{
-            # "flat_terrain" : {"probability": 0.1},
-            "stamble_terrain" : {"probability": 0.1},
-            "pyramid_sloped_terrain" : {"probability": 0.1},
-            "discrete_obstacles_terrain" : {"probability": 0.1},
-            # "random_uniform_terrain" : {"probability": 0.1},
-            # "fractal_terrain" : {"probability": 0.1},
-            "pyramid_stairs_terrain" : {"probability": 0.2},
-            "blocky_terrain": {"probability": 0.1},
-            "pyramid_steep_down_stairs_terrain" : {"probability": 0.1},
+            "flat_terrain" : {"probability": 0.1},
         }
     }
 
@@ -252,8 +243,8 @@ def get_cfgs():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="go1_walking")
-    parser.add_argument("-B", "--num_envs", type=int, default=10000)
-    parser.add_argument("--max_iterations", type=int, default=10000)
+    parser.add_argument("-B", "--num_envs", type=int, default=4096) #10000
+    parser.add_argument("--max_iterations", type=int, default=2000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
@@ -262,7 +253,8 @@ def main():
 
     gs.init(logging_level="warning")
 
-    log_dir_ = f"logs/{args.exp_name}"
+    BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    log_dir_ = os.path.join(BASE_DIR, "logs", args.exp_name)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(log_dir_, timestamp)
     env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, terrain_cfg = get_cfgs()
@@ -327,8 +319,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-# training
-python examples/locomotion/go1_train.py
-"""

@@ -130,7 +130,7 @@ def parse_terrain(morph: Terrain, surface):
                         ).height_field_raw
 
                     elif subterrain_type == "pyramid_stairs_terrain":
-                        step_height = random.uniform(0.15, 0.2)
+                        step_height = random.uniform(0.05, 0.1)
                         step_width = random.uniform(0.25, 0.3)
                         subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                             new_subterrain,
