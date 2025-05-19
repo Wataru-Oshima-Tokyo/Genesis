@@ -263,7 +263,7 @@ def stairs_terrain(terrain, step_width, step_height):
     return terrain
 
 
-def pyramid_stairs_terrain(terrain, step_width, step_height, platform_size=0.7):
+def pyramid_stairs_terrain(terrain, step_width, step_height, platform_size=1.0):
     """
     Generate stairs
 

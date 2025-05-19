@@ -76,6 +76,9 @@ class LeggedEnv:
         self.num_privileged_obs = obs_cfg["num_privileged_obs"]
         self.num_actions = env_cfg["num_actions"]
         self.num_commands = command_cfg["num_commands"]
+        self.command_curriculum = command_cfg["curriculum"]
+        self.curriculum_duration = command_cfg["curriculum_duration"]
+        self.curriculum_step = 0
         # self.joint_limits = env_cfg["joint_limits"]
         self.simulate_action_latency = env_cfg["simulate_action_latency"]  # there is a 1 step latency on real robot
         self.dt = 1 / env_cfg['control_freq']
@@ -119,6 +122,8 @@ class LeggedEnv:
           visualized_number = 100
         if self.terrain_type == "plane" and visualized_number > 3:
           visualized_number = 3
+        elif self.terrain_type == "custom_plane" and visualized_number > 3:
+          visualized_number = 20
         self.scene = gs.Scene(
             sim_options=gs.options.SimOptions(
                 dt=sim_dt,
@@ -135,7 +140,7 @@ class LeggedEnv:
                 dt=sim_dt,
                 constraint_solver=gs.constraint_solver.Newton,
                 enable_collision=True,
-                enable_self_collision=False,
+                enable_self_collision=env_cfg['self_collision'],
                 enable_joint_limit=True,
             ),
             show_viewer=False,
@@ -168,7 +173,7 @@ class LeggedEnv:
         subterrain_size = terrain_cfg["subterrain_size"]
         horizontal_scale = terrain_cfg["horizontal_scale"]
         vertical_scale = terrain_cfg["vertical_scale"]        
-        if self.terrain_type != "plane":
+        if self.terrain_type != "plane" and self.terrain_type != "custom_plane":
             # # add plain
 
             ########################## entities ##########################
@@ -209,10 +214,14 @@ class LeggedEnv:
             self.global_terrain = self.scene.add_entity(self.terrain)
             
         else:
-            
-            self.scene.add_entity(
-                gs.morphs.Plane(),
-            )
+            if self.terrain_type == "custom_plane":
+                self.scene.add_entity(
+                    gs.morphs.URDF(file="urdf/plane/custom_plane.urdf", fixed=True),
+                ) 
+            else:
+                self.scene.add_entity(
+                    gs.morphs.Plane(),
+                )
             self.random_pos = self.generate_positions()
         self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=self.device)
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
@@ -239,7 +248,7 @@ class LeggedEnv:
 
         # build
         self.scene.build(n_envs=num_envs)
-        if self.terrain_type != "plane":
+        if self.terrain_type != "plane" and self.terrain_type != "custom_plane":
             self.subterrain_centers = []
             # Get the terrain's origin position in world coordinates
             terrain_origin_x, terrain_origin_y, terrain_origin_z = self.terrain.pos
@@ -384,6 +393,7 @@ class LeggedEnv:
 
         # initialize buffers
         self.init_buffers()
+        self.assign_fixed_commands()
         print("Done initializing")
 
 
@@ -521,28 +531,8 @@ class LeggedEnv:
             link_idx: i for i, link_idx in enumerate(self.feet_indices)
         }
 
-    # def get_terrain_height_at(self, x_world, y_world):
-    #     if self.terrain_cfg["terrain_type"] == "plane":
-    #       return torch.tensor(0.0, device=self.device)
-    #     # Create the transform matrix (same as your NumPy one)
-    #     s = self.terrain_cfg["horizontal_scale"]
-    #     mat = torch.tensor([[0.0, 1.0 / s],
-    #                         [1.0 / s, 0.0]], device=self.device)
-
-    #     # Shift world position by center
-    #     vec = torch.stack([x_world + self.center_x,
-    #                     y_world + self.center_y])
-
-    #     # Apply transformation
-    #     result = mat @ vec
-
-    #     i = result[1].long().clamp(0, self.height_field_tensor.shape[0] - 1)
-    #     j = result[0].long().clamp(0, self.height_field_tensor.shape[1] - 1)
-
-    #     return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
-
     def get_terrain_height_at(self, x_world, y_world):
-        if self.terrain_cfg["terrain_type"] == "plane":
+        if self.terrain_cfg["terrain_type"] == "plane" or self.terrain_cfg["terrain_type"] == "custom_plane":
             return torch.zeros_like(x_world, device=self.device)
     
         s = self.terrain_cfg["horizontal_scale"]
@@ -560,7 +550,7 @@ class LeggedEnv:
         return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
 
     def get_terrain_height_at_for_base(self, x_world, y_world):
-        if self.terrain_cfg["terrain_type"] == "plane":
+        if self.terrain_cfg["terrain_type"] == "plane" or self.terrain_cfg["terrain_type"] == "custom_plane":
           return torch.tensor(0.0, device=self.device)
         # Create the transform matrix (same as your NumPy one)
         s = self.terrain_cfg["horizontal_scale"]
@@ -580,6 +570,57 @@ class LeggedEnv:
         return self.height_field_tensor[i, j] * self.terrain_cfg["vertical_scale"]
 
 
+    def assign_fixed_commands(self):
+        n_cmds = 4
+        cmd_types = torch.arange(self.num_envs, device=self.device) % n_cmds
+        cmds = torch.zeros((self.num_envs, 3), device=self.device)
+
+        # Forward (+x)
+        fwd_mask = (cmd_types == 0)
+        cmds[fwd_mask, 0] = gs_rand_float(0.5, self.command_cfg["lin_vel_x_range"][1], (fwd_mask.sum(),), self.device)
+
+        # Backward (-x)
+        bwd_mask = (cmd_types == 1)
+        cmds[bwd_mask, 0] = gs_rand_float(self.command_cfg["lin_vel_x_range"][0], -0.5, (bwd_mask.sum(),), self.device)
+
+        # Right (+y)
+        right_mask = (cmd_types == 2)
+        cmds[right_mask, 1] = gs_rand_float(0.5, self.command_cfg["lin_vel_y_range"][1], (right_mask.sum(),), self.device)
+
+        # Left (-y)
+        left_mask = (cmd_types == 3)
+        cmds[left_mask, 1] = gs_rand_float(self.command_cfg["lin_vel_y_range"][0], -0.5, (left_mask.sum(),), self.device)
+
+        self.commands[:] = cmds
+        self._current_command_types = cmd_types  # For tracking/debug
+
+
+    def assign_command_randomly_for_env0(self):
+        """
+        Randomly assign one of the four fixed commands (forward, backward, right, left)
+        with a random velocity value (within range) to environment 0 only.
+        """
+        n_cmds = 4
+        cmd_type = torch.randint(0, n_cmds, (1,), device=self.device).item()
+        cmd = torch.zeros(3, device=self.device)
+
+        if cmd_type == 0:
+            # Forward: sample from [0.0, max]
+            cmd[0] = gs_rand_float(0.5, self.command_cfg["lin_vel_x_range"][1], (1,), self.device)
+        elif cmd_type == 1:
+            # Backward: sample from [min, 0.0]
+            cmd[0] = gs_rand_float(self.command_cfg["lin_vel_x_range"][0], -0.5, (1,), self.device)
+        elif cmd_type == 2:
+            # Right: sample from [0.0, max]
+            cmd[1] = gs_rand_float(0.5, self.command_cfg["lin_vel_y_range"][1], (1,), self.device)
+        elif cmd_type == 3:
+            # Left: sample from [min, 0.0]
+            cmd[1] = gs_rand_float(self.command_cfg["lin_vel_y_range"][0], -0.5, (1,), self.device)
+
+        self.commands[0] = cmd
+
+        if hasattr(self, '_current_command_types'):
+            self._current_command_types[0] = cmd_type
 
     def _resample_commands_max(self, envs_idx):
         # Sample linear and angular velocities
@@ -599,6 +640,10 @@ class LeggedEnv:
         uniform_samples = torch.rand(size, device=device)  # [0, 1] uniform
         skewed_samples = uniform_samples ** (1.0 / bias)  # Biasing towards 1
         return min_val + (max_val - min_val) * skewed_samples
+
+    def _resample_commands_without_omega(self, envs_idx):
+        self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), self.device)
+        self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["lin_vel_y_range"], (len(envs_idx),), self.device)
 
     def _resample_commands(self, envs_idx):
         if True:
@@ -861,7 +906,6 @@ class LeggedEnv:
         # compute observations
         self.obs_buf = torch.cat(
             [
-                base_lin_vel,        # 3
                 base_ang_vel,        # 3
                 projected_gravity,   # 3
                 commands,            # 3
@@ -943,14 +987,24 @@ class LeggedEnv:
         noise_vec = torch.zeros_like(self.obs_buf[0])
         self.add_noise = self.noise_cfg["add_noise"]
         noise_level =self.noise_cfg["noise_level"]
-        noise_vec[:3] = self.noise_scales["lin_vel"] * noise_level * self.obs_scales["lin_vel"]
-        noise_vec[3:6] = self.noise_scales["ang_vel"] * noise_level * self.obs_scales["ang_vel"]
-        noise_vec[6:9] = self.noise_scales["gravity"] * noise_level
-        noise_vec[9:12] = 0. # commands
-        noise_vec[12:12+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
-        noise_vec[12+self.num_actions:12+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
-        noise_vec[12+3*self.num_actions:12+4*self.num_actions] = 0. # previous actions
-        noise_vec[12+4*self.num_actions:12+4*self.num_actions+8] = 0. # sin/cos phase
+        # noise_vec[:3] = self.noise_scales["lin_vel"] * noise_level * self.obs_scales["lin_vel"]
+        # noise_vec[3:6] = self.noise_scales["ang_vel"] * noise_level * self.obs_scales["ang_vel"]
+        # noise_vec[6:9] = self.noise_scales["gravity"] * noise_level
+        # noise_vec[9:12] = 0. # commands
+        # noise_vec[12:12+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
+        # noise_vec[12+self.num_actions:12+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
+        # noise_vec[12+3*self.num_actions:12+4*self.num_actions] = 0. # previous actions
+        # noise_vec[12+4*self.num_actions:12+4*self.num_actions+8] = 0. # sin/cos phase
+
+        noise_vec[:3] = self.noise_scales["ang_vel"] * noise_level * self.obs_scales["ang_vel"]
+        noise_vec[3:6] = self.noise_scales["gravity"] * noise_level
+        noise_vec[6:9] = 0. # commands
+        noise_vec[9:9+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
+        noise_vec[9+self.num_actions:9+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
+        noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
+        noise_vec[9+4*self.num_actions:9+4*self.num_actions+8] = 0. # sin/cos phase
+
+
         return noise_vec
 
 
@@ -967,8 +1021,8 @@ class LeggedEnv:
         #pitch and roll degree exceed termination
         if not self.termination_exceed_degree_ignored:
             # Check where pitch and roll exceed thresholds
-            pitch_exceeded = torch.abs(self.base_euler[:, 1]) > self.termination_if_pitch_greater_than_value
-            roll_exceeded = torch.abs(self.base_euler[:, 0]) > self.termination_if_roll_greater_than_value
+            pitch_exceeded = torch.abs(self.base_euler[:, 1]) > math.radians(self.termination_if_pitch_greater_than_value)
+            roll_exceeded = torch.abs(self.base_euler[:, 0]) > math.radians(self.termination_if_roll_greater_than_value)
 
             # Increment duration where exceeded
             self.pitch_exceed_duration_buf[pitch_exceeded] += self.dt
@@ -985,6 +1039,12 @@ class LeggedEnv:
             self.reset_buf |= pitch_timeout
             self.reset_buf |= roll_timeout
         # Timeout termination
+        if self.command_curriculum and self.curriculum_duration > self.curriculum_step*self.dt:
+            yaw_limit = 20
+            exceed_yaw = torch.abs(self.base_euler[:, 2]) > math.radians(yaw_limit)
+            self.reset_buf |= exceed_yaw
+
+
         self.reset_buf |= self.base_pos[:, 2] < self.env_cfg['termination_if_height_lower_than']
         # -------------------------------------------------------
         #  Add out-of-bounds check using terrain_min_x, etc.
@@ -992,7 +1052,7 @@ class LeggedEnv:
         # min_x, max_x, min_y, max_y = self.terrain_bounds  # or however you store them
         
         # We assume base_pos[:, 0] is x, base_pos[:, 1] is y
-        if self.terrain_type != "plane":
+        if self.terrain_type != "plane" and self.terrain_type != "custom_plane":
             self.out_of_bounds_buf = (
                 (self.base_pos[:, 0] < self.terrain_min_x) |
                 (self.base_pos[:, 0] > self.terrain_max_x) |
@@ -1033,7 +1093,7 @@ class LeggedEnv:
         self.mean_reward_flag = mean_reward > 10
         
 
-        if self.env_cfg["randomize_rot"] and self.mean_reward_flag:
+        if self.env_cfg["randomize_rot"] and self.mean_reward_flag and not self.command_curriculum:
             # 1) Get random roll, pitch, yaw (in degrees) for each environment.
             
             roll = gs_rand_float(*self.env_cfg["roll_range"],  (len(envs_idx),), self.device)
@@ -1075,7 +1135,6 @@ class LeggedEnv:
         self.reset_buf[envs_idx] = True
         self.contact_duration_buf[envs_idx] = 0.0
         # fill extras
-        self._resample_commands(envs_idx)
         self._randomize_rigids(envs_idx)
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
@@ -1084,8 +1143,16 @@ class LeggedEnv:
             )
             self.episode_sums[key][envs_idx] = 0.0
 
+        self.curriculum_step += 1
+        if self.command_curriculum and self.curriculum_duration > self.curriculum_step*self.dt:
+            if 0 in envs_idx:    # If environment 0 is being reset
+                self.assign_command_randomly_for_env0()
+        elif self.command_curriculum and self.curriculum/2 > self.curriculum_step*selfdt:
+            self._resample_commands_without_omega(envs_idx)
+        else:
+            self._resample_commands(envs_idx)
+            self.command_curriculum = False
         
-        self._resample_commands(envs_idx)
         # self._resample_commands_max(envs_idx)
         if self.env_cfg['send_timeouts']:
             self.extras['time_outs'] = self.time_out_buf
@@ -1314,6 +1381,10 @@ class LeggedEnv:
         # Tracking of angular velocity commands (yaw)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         return torch.exp(-ang_vel_error / self.reward_cfg["tracking_sigma"])
+
+    def _reward_roll_penalty(self):
+        # Penalize large roll (base_euler[:, 0] is roll in radians)
+        return torch.square(self.base_euler[:, 0])
 
     def _reward_lin_vel_z(self):
         # Penalize z axis base linear velocity

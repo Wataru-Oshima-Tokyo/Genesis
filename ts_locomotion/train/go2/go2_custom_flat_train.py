@@ -159,7 +159,7 @@ def get_cfgs():
         "yaw_range": [-90, 90],
     }
     obs_cfg = {
-        "num_obs": 48,
+        "num_obs": 45,
         "num_privileged_obs": 60,
         "obs_scales": {
             "lin_vel": 2.0,
@@ -212,8 +212,8 @@ def get_cfgs():
     }
     command_cfg = {
         "num_commands": 3,
-        "curriculum": False,
-        "curriculum_duration": 100, #1 calculated 1 iteration is 1 seocnd 2000 = 
+        "curriculum": True,
+        "curriculum_duration": 4000, #1 calculated 1 iteration is 1 seocnd 2000 = 
         "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],
@@ -231,20 +231,18 @@ def get_cfgs():
         }
     }
     terrain_cfg = {
-        "terrain_type": "trimesh", #plane
+        "terrain_type": "custom_plane", #plane, trimesh, custom_plane
         "subterrain_size": 4.0,
         "horizontal_scale": 0.05,
         "vertical_scale": 0.005,
         "cols": 5,  #should be more than 5
         "rows": 5,   #should be more than 5
         "selected_terrains":{
-            "flat_terrain" : {"probability": 0.3},
-            "stamble_terrain" : {"probability": 0.1},
-            "pyramid_sloped_terrain" : {"probability": 0.1},
+            "flat_terrain" : {"probability": 0.2},
+            # "blocky_terrain" : {"probability": 0.2},
+            "stamble_terrain" : {"probability": 0.2},
             "discrete_obstacles_terrain" : {"probability": 0.1},
-            "pyramid_down_stairs_terrain" : {"probability": 0.2},
-            # "blocky_terrain": {"probability": 0.1},
-            "pyramid_steep_down_stairs_terrain" : {"probability": 0.1},
+            "pyramid_stairs_terrain" : {"probability": 0.2},
         }
     }
 
@@ -255,7 +253,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="go2_walking")
     parser.add_argument("-B", "--num_envs", type=int, default=4096) #10000
-    parser.add_argument("--max_iterations", type=int, default=10000)
+    parser.add_argument("--max_iterations", type=int, default=5000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--vis", action="store_true", help="If you would like to see how robot is trained")

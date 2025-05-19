@@ -30,6 +30,7 @@ def main():
     reward_cfg["reward_scales"] = {}
     train_cfg["policy"]["class_name"] = "ActorCritic"      # or "ActorCriticRecurrent"
     train_cfg["algorithm"]["class_name"] = "PPO"          # ← add this line
+    command_cfg["curriculum"] = False
     env = LeggedEnv(
         num_envs=1,
         env_cfg=env_cfg,

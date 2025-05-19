@@ -236,7 +236,7 @@ def get_cfgs():
         "vertical_scale": 0.005,
         "cols": 5,  #should be more than 5
         "rows": 5,   #should be more than 5
-        "selected_terrains":{
+        "selected_terrains":{ 
             "flat_terrain" : {"probability": 0.2},
             # "blocky_terrain" : {"probability": 0.2},
             "stamble_terrain" : {"probability": 0.2},
@@ -265,7 +265,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(log_dir_, timestamp)
     env_cfg, obs_cfg, noise_cfg, reward_cfg, command_cfg, terrain_cfg = get_cfgs()
-    train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
+      = get_train_cfg(args.exp_name, args.max_iterations)
 
     
     env = LeggedEnv(
