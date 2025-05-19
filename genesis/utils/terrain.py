@@ -147,7 +147,7 @@ def parse_terrain(morph: Terrain, surface):
                         ).height_field_raw
                     elif subterrain_type == "pyramid_steep_down_stairs_terrain":
                         step_height = -0.2 
-                        step_width = 0.2
+                        step_width = 0.25
                         subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                             new_subterrain,
                             step_width= step_width,

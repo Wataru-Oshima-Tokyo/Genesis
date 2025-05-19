@@ -110,7 +110,8 @@ def get_cfgs():
         # termination
         'termination_contact_link_names': ['base'],
         'penalized_contact_link_names': ['base', 'thigh', 'calf'],
-        'feet_link_names': ['foot'],
+        'calf_link_name': ['calf'],
+        'feet_link_name': ['foot'],
         'base_link_name': ['base'], 
         "hip_joint_names": [
             "FL_hip_joint",
@@ -161,7 +162,7 @@ def get_cfgs():
     }
     obs_cfg = {
         "num_obs": 45,
-        "num_privileged_obs": 56,
+        "num_privileged_obs": 48,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
@@ -188,22 +189,26 @@ def get_cfgs():
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
             "lin_vel_z": -0.0001, #-5.0
-            "relative_base_height": -10.0, # -30.0
-            "orientation": -0.00001, #-30.0
-            "ang_vel_xy": -0.0001,
+            "relative_base_height": -5.0, # -30.0
+            "orientation": -0.001, #-30.0
+            "ang_vel_xy": -0.01,
             "collision": -0.5,
             "front_feet_clearance": 10.0,
             "rear_feet_clearance": 10.0,
             "action_rate": -0.01,
+            "rear_feet_level_with_front": 1.0,
             # "hip_pos": -.1, #-1.0
-            "contact_no_vel": -0.002,
+            # "contact_no_vel": -0.002,
             "dof_acc": -2.5e-7,
-            "contact": 0.01,
+            # "contact": 0.01,
             "dof_pos_limits": -3.0,
             "dof_vel": -1.0e-5,
-            'torques': -0.00002,
+            'torques': -0.00001,
             "termination": -30.0,
-            # "feet_contact_forces": -0.0001,
+            # "base_upward_progress": 2.0,
+            "calf_collision_low_clearance": -2.0,
+            # "similar_to_default": -0.001,
+            "feet_contact_forces": -0.0001,
         },
     }
     command_cfg = {
@@ -233,10 +238,10 @@ def get_cfgs():
         "rows": 5,   #should be more than 5
         "selected_terrains":{
             "flat_terrain" : {"probability": 0.2},
-            "blocky_terrain" : {"probability": 0.2},
+            # "blocky_terrain" : {"probability": 0.2},
             "stamble_terrain" : {"probability": 0.2},
             "discrete_obstacles_terrain" : {"probability": 0.1},
-            "pyramid_stairs_terrain" : {"probability": 0.1},
+            "pyramid_stairs_terrain" : {"probability": 0.2},
         }
     }
 

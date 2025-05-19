@@ -209,6 +209,7 @@ class LeggedEnv:
             self.global_terrain = self.scene.add_entity(self.terrain)
             
         else:
+            
             self.scene.add_entity(
                 gs.morphs.Plane(),
             )
@@ -290,12 +291,41 @@ class LeggedEnv:
         self.penalised_contact_indices = find_link_indices(
             self.env_cfg['penalized_contact_link_names']
         )
+        self.calf_contact_indices = find_link_indices(
+            self.env_cfg['calf_link_name']
+        )
+
         self.feet_indices = find_link_indices(
-            self.env_cfg['feet_link_names']
+            self.env_cfg['feet_link_name']
         )
         self.base_link_index = find_link_indices(
             self.env_cfg['base_link_name']
         )
+
+        def _map_calf_to_foot_indices():
+            calf_to_foot = {}
+            valid_prefixes = ["FL", "FR", "RL", "RR"]
+
+            calf_names = self.env_cfg['calf_link_name']          # list like ["calf"]
+            foot_suffix = self.env_cfg['feet_link_name'][0]      # e.g., "foot"
+
+            for calf_link in self.robot.links:
+                if any(name in calf_link.name for name in calf_names):
+                    prefix = calf_link.name.split("_")[0]  # e.g., "FL"
+                    if prefix not in valid_prefixes:
+                        continue
+
+                    target_foot_name = f"{prefix}_{foot_suffix}"
+                    for foot_link in self.robot.links:
+                        if foot_link.name == target_foot_name:
+                            calf_idx = calf_link.idx - self.robot.link_start
+                            foot_idx = self.feet_indices[valid_prefixes.index(prefix)]
+                            calf_to_foot[calf_idx] = foot_idx
+
+            return calf_to_foot
+
+        self.calf_to_foot_map = _map_calf_to_foot_indices()
+        print(f"calf to foot mao {self.calf_to_foot_map}")
         print(f"motor dofs {self.motor_dofs}")
         print(f"feet indicies {self.feet_indices}")
         # PD control
@@ -334,6 +364,8 @@ class LeggedEnv:
         self.termination_if_pitch_greater_than_value = self.env_cfg["termination_if_pitch_greater_than"]
         if self.termination_if_roll_greater_than_value <= 1e-6 or self.termination_if_pitch_greater_than_value <= 1e-6:
             self.termination_exceed_degree_ignored = True
+
+        print(f"termination exceed degree ignored is {self.termination_exceed_degree_ignored}")
 
         print("Robot links")
         for link in self.robot._links:
@@ -483,7 +515,11 @@ class LeggedEnv:
         self.extras = dict()  # extra information for logging
         self.extras["observations"] = dict()
 
-
+        self.prev_rel_h = torch.zeros((self.num_envs,), device=self.device)
+        # Mapping from actual link index (e.g., 13) → index in feet_pos[:, :, :]
+        self.link_idx_to_feet_tensor_idx = {
+            link_idx: i for i, link_idx in enumerate(self.feet_indices)
+        }
 
     # def get_terrain_height_at(self, x_world, y_world):
     #     if self.terrain_cfg["terrain_type"] == "plane":
@@ -793,46 +829,80 @@ class LeggedEnv:
         sin_phase = torch.sin(2 * np.pi * self.leg_phase)  # Shape: (batch_size, 4)
         cos_phase = torch.cos(2 * np.pi * self.leg_phase)  # Shape: (batch_size, 4)
 
+        # Prepare all components
+        base_lin_vel = self.base_lin_vel * self.obs_scales["lin_vel"]
+        base_ang_vel = self.base_ang_vel * self.obs_scales["ang_vel"]
+        projected_gravity = self.projected_gravity
+        commands = self.commands * self.commands_scale
+        dof_pos_scaled = (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"]
+        dof_vel_scaled = self.dof_vel * self.obs_scales["dof_vel"]
+        actions = self.actions
+        # ─── post_physics_step_callback() ────────────────────────────────
+        swing_mask = (self.leg_phase > 0.55)                 # (N,4)
+        foot_force = torch.norm(self.contact_forces[:,       # (N,4)
+                                self.feet_indices, :3], dim=2)
+
+        collision  = (swing_mask & (foot_force > 1.0)).float()   # (N,4)
+        # Debug checks
+        debug_items = {
+            "base_ang_vel": base_ang_vel,
+            "projected_gravity": projected_gravity,
+            "commands": commands,
+            "dof_pos_scaled": dof_pos_scaled,
+            "dof_vel_scaled": dof_vel_scaled,
+            "actions": actions,
+        }
+
+        for name, tensor in debug_items.items():
+            if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+                print(f">>> WARNING: NaN or Inf in {name} <<<")
+                print(tensor)
 
         # compute observations
         self.obs_buf = torch.cat(
             [
-                # self.base_lin_vel * self.obs_scales["lin_vel"],  # 3
-                self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
-                self.projected_gravity,  # 3
-                self.commands * self.commands_scale,  # 3
-                (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
-                self.dof_vel * self.obs_scales["dof_vel"],  # 12
-                # self.torques * self.obs_scales["torques"],  # 12 ← NEW
-                self.actions,  # 12
-                # sin_phase, #4no
-                # cos_phase #4
+                base_lin_vel,        # 3
+                base_ang_vel,        # 3
+                projected_gravity,   # 3
+                commands,            # 3
+                dof_pos_scaled,      # 12
+                dof_vel_scaled,      # 12
+                actions              # 12
+                # sin_phase, cos_phase  # optional
             ],
             axis=-1,
         )
-        # compute observations
+
         self.privileged_obs_buf = torch.cat(
             [
-                self.base_lin_vel * self.obs_scales["lin_vel"],  # 3
-                self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
-                self.projected_gravity,  # 3
-                self.commands * self.commands_scale,  # 3
-                (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
-                self.dof_vel * self.obs_scales["dof_vel"],  # 12
-                self.actions,  # 12
-                sin_phase, #4
-                cos_phase #4
+                base_lin_vel,        # 3
+                base_ang_vel,        # 3
+                projected_gravity,   # 3
+                commands,            # 3
+                dof_pos_scaled,      # 12
+                dof_vel_scaled,      # 12
+                actions,              # 12
+                sin_phase, 
+                cos_phase,  
+                collision
             ],
             axis=-1,
         )
-        
+
         self.obs_buf = torch.clip(self.obs_buf, -self.clip_obs, self.clip_obs)
         self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -self.clip_obs, self.clip_obs)
+
         if self.add_noise:
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
 
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
+
+        # Final check
+        if torch.isnan(self.obs_buf).any() or torch.isinf(self.obs_buf).any():
+            print(">>> WARNING: NaN or Inf in final obs_buf <<<")
+            print(self.obs_buf)
+
 
 
     def compute_rewards(self):
@@ -873,14 +943,14 @@ class LeggedEnv:
         noise_vec = torch.zeros_like(self.obs_buf[0])
         self.add_noise = self.noise_cfg["add_noise"]
         noise_level =self.noise_cfg["noise_level"]
-        # noise_vec[:3] = self.noise_scales["lin_vel"] * noise_level * self.obs_scales["lin_vel"]
-        noise_vec[:3] = self.noise_scales["ang_vel"] * noise_level * self.obs_scales["ang_vel"]
-        noise_vec[3:6] = self.noise_scales["gravity"] * noise_level
-        noise_vec[6:9] = 0. # commands
-        noise_vec[9:9+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
-        noise_vec[9+self.num_actions:9+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
-        noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
-        # noise_vec[9+4*self.num_actions:9+4*self.num_actions+8] = 0. # sin/cos phase
+        noise_vec[:3] = self.noise_scales["lin_vel"] * noise_level * self.obs_scales["lin_vel"]
+        noise_vec[3:6] = self.noise_scales["ang_vel"] * noise_level * self.obs_scales["ang_vel"]
+        noise_vec[6:9] = self.noise_scales["gravity"] * noise_level
+        noise_vec[9:12] = 0. # commands
+        noise_vec[12:12+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
+        noise_vec[12+self.num_actions:12+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
+        noise_vec[12+3*self.num_actions:12+4*self.num_actions] = 0. # previous actions
+        noise_vec[12+4*self.num_actions:12+4*self.num_actions+8] = 0. # sin/cos phase
         return noise_vec
 
 
@@ -1276,8 +1346,8 @@ class LeggedEnv:
 
         # --- ピッチ角が ±10° 以内の環境だけ有効にする -------------------------
         # base_euler[:, 1] は pitch (deg) で格納されている前提
-        # pitch_ok = (torch.abs(self.base_euler[:, 1]) < 10.0) # Bool tensor shape = (N,)
-        # penalty  = penalty * pitch_ok.float()                # True →そのまま, False→0
+        pitch_ok = (torch.abs(self.base_euler[:, 1]) < 5.0) # Bool tensor shape = (N,)
+        penalty  = penalty * pitch_ok.float()                # True →そのまま, False→0
         return penalty
 
     def _reward_collision(self):
@@ -1370,13 +1440,18 @@ class LeggedEnv:
       )
       rel_h = z - terrain_h  # shape: (N, 2)
   
+      #   # 3) Check if rear feet are swinging (not in contact and vx nonzero)
+      #   foot_vel_x = self.feet_vel[:, :2, 0]  # front feet vx (feet 2 and 3)
+      #   swing_fwd = (~contact) & (foot_vel_x > 0.05)  # (N, 2)
       # 3) Check if rear feet are swinging (not in contact and vx nonzero)
-      foot_vel_x = self.feet_vel[:, :2, 0]  # rear feet vx (feet 2 and 3)
+      foot_vel_x = self.feet_vel[:, :2, 0]  # front feet vx (feet 2 and 3)
       swing_fwd = (~contact) & (foot_vel_x > 0.05)  # (N, 2)
   
+
+
       # 4) Quadratic reward logic
-      clearance_start = 0.05         # reward begins above 5 cm
-      max_reward_height = 0.20       # cap reward at 20 cm
+      clearance_start = 0.01         # reward begins above 5 cm
+      max_reward_height = 0.15       # cap reward at 20 cm
       max_bonus = (max_reward_height - clearance_start) ** 2  # = 0.0225
   
       above_target = torch.clamp(rel_h - clearance_start, min=0.0)  # (N, 2)
@@ -1421,13 +1496,14 @@ class LeggedEnv:
       )
       rel_h = z - terrain_h  # shape: (N, 2)
   
+      
       # 3) Check if rear feet are swinging (not in contact and vx nonzero)
-      foot_vel_x = self.feet_vel[:, 2:, 0]  # rear feet vx (feet 2 and 3)
-      swing_bwd = (~contact) & (foot_vel_x <  -0.05)  # (N, 2)
+      foot_vel_x = self.feet_vel[:, 2:, 0]  # front feet vx (feet 2 and 3)
+      swing_bwd = (~contact) & (foot_vel_x > 0.05)  # (N, 2)
   
       # 4) Quadratic reward logic
-      clearance_start = 0.05         # reward begins above 5 cm
-      max_reward_height = 0.15       # cap reward at 20 cm
+      clearance_start = 0.01         # reward begins above 5 cm
+      max_reward_height = 0.15       # cap reward at 15 cm
       max_bonus = (max_reward_height - clearance_start) ** 2  # = 0.0225
   
       above_target = torch.clamp(rel_h - clearance_start, min=0.0)  # (N, 2)
@@ -1555,3 +1631,110 @@ class LeggedEnv:
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.reward_cfg["max_contact_force"]).clip(min=0.), dim=1)
+
+
+    def _reward_base_upward_progress(self):
+        """ 階段登攀時のベース上昇に対する報酬（連続的に上に移動する場合に与える） """
+        terrain_h = self.get_terrain_height_at_for_base(self.base_pos[:, 0], self.base_pos[:, 1])
+        rel_h = self.base_pos[:, 2] - terrain_h
+
+        # 差分で高さの変化を取る（上昇時のみ報酬）
+        delta_h = rel_h - getattr(self, "prev_rel_h", torch.zeros_like(rel_h))
+        self.prev_rel_h = rel_h.clone()
+
+        return torch.relu(delta_h)  # 上昇した分だけ報酬
+
+
+    def _reward_rear_feet_level_with_front(self):
+        # Get world-frame foot positions
+        front_z = self.feet_front_pos[:, :, 2]  # (N, 2)
+        rear_z  = self.feet_rear_pos[:, :, 2]   # (N, 2)
+
+        # Terrain height under each foot
+        terrain_front = self.get_terrain_height_at(
+            self.feet_front_pos[:, :, 0], self.feet_front_pos[:, :, 1])
+        terrain_rear = self.get_terrain_height_at(
+            self.feet_rear_pos[:, :, 0], self.feet_rear_pos[:, :, 1])
+
+        # Relative clearance above terrain
+        front_rel = front_z - terrain_front  # (N, 2)
+        rear_rel  = rear_z  - terrain_rear   # (N, 2)
+
+        # Diagonal pairs: [FL, FR], [RL, RR]
+        # Assume index 0 = FL, 1 = FR, 0 = RL, 1 = RR
+        # Compare: FL vs RR, FR vs RL
+        rel_FL = front_rel[:, 0]
+        rel_FR = front_rel[:, 1]
+        rel_RL = rear_rel[:, 0]
+        rel_RR = rear_rel[:, 1]
+
+        # Contact info: feet in contact = True
+        contact_front = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0  # (N, 2)
+        contact_rear  = torch.norm(self.contact_forces[:, self.feet_rear_indices,  :3], dim=2) > 1.0  # (N, 2)
+
+        # Diagonal contact status
+        FL_contact = contact_front[:, 0]
+        FR_contact = contact_front[:, 1]
+        RL_contact = contact_rear[:, 0]
+        RR_contact = contact_rear[:, 1]
+
+        # diag1 = FL–RR; reward if at least one of them is in the air
+        diag1_mask = ~(FL_contact & RR_contact)  # reward if not both in contact
+        diag1_diff = torch.abs(rel_FL - rel_RR)
+        reward_diag1 = torch.exp(-10.0 * diag1_diff) * diag1_mask.float()
+
+        # diag2 = FR–RL; reward if at least one of them is in the air
+        diag2_mask = ~(FR_contact & RL_contact)
+        diag2_diff = torch.abs(rel_FR - rel_RL)
+        reward_diag2 = torch.exp(-10.0 * diag2_diff) * diag2_mask.float()
+
+        # Total reward
+        return reward_diag1 + reward_diag2
+
+    # def _reward_calf_collision_low_clearance(self):
+    #     # Calf-specific collision detection
+    #     undesired_forces = torch.norm(self.contact_forces[:, self.calf_contact_indices, :], dim=-1)
+    #     collision_mask = (undesired_forces > 0.1).float()  # shape: (N, num_calf_links)
+
+    #     # Foot clearance
+    #     foot_z = self.feet_pos[:, :, 2]  # shape: (N, 4)
+    #     terrain_h = self.get_terrain_height_at(
+    #         self.feet_pos[:, :, 0],
+    #         self.feet_pos[:, :, 1]
+    #     )
+    #     clearance = foot_z - terrain_h  # shape: (N, 4)
+
+    #     low_clearance_mask = (clearance < 0.05).float()  # shape: (N, 4)
+
+    #     # Use the smaller dimension (in case of mismatch)
+    #     min_dim = min(collision_mask.shape[1], low_clearance_mask.shape[1])
+    #     penalty = (collision_mask[:, :min_dim] * low_clearance_mask[:, :min_dim]).sum(dim=1)
+
+    #     return penalty
+
+
+    def _reward_calf_collision_low_clearance(self):
+        penalty = torch.zeros(self.num_envs, device=self.device)
+
+        for calf_idx, foot_idx in self.calf_to_foot_map.items():
+            # 1. Check if calf is in contact
+            calf_force = torch.norm(self.contact_forces[:, calf_idx, :], dim=1)
+            calf_collision = calf_force > 1.0  # shape: (N,)
+            feet_tensor_idx = self.link_idx_to_feet_tensor_idx.get(foot_idx, None)
+            if feet_tensor_idx is None:
+                continue  # skip if not found
+
+            foot_z = self.feet_pos[:, feet_tensor_idx, 2]
+            terrain_z = self.get_terrain_height_at(
+                self.feet_pos[:, feet_tensor_idx, 0],
+                self.feet_pos[:, feet_tensor_idx, 1]
+            )
+            
+            clearance = foot_z - terrain_z
+
+            # 3. Penalize if clearance is low while calf is in contact
+            low_clearance = clearance < 0.05
+            penalty += calf_collision.float() * low_clearance.float()
+
+        return penalty
+
