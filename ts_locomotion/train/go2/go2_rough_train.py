@@ -83,18 +83,18 @@ def get_cfgs():
             "RR_calf_joint": -1.5,
         },
         "dof_names": [
-            "FL_hip_joint",
-            "FL_thigh_joint",
-            "FL_calf_joint",
             "FR_hip_joint",
             "FR_thigh_joint",
             "FR_calf_joint",
-            "RL_hip_joint",
-            "RL_thigh_joint",
-            "RL_calf_joint",
+            "FL_hip_joint",
+            "FL_thigh_joint",
+            "FL_calf_joint",
             "RR_hip_joint",
             "RR_thigh_joint",
             "RR_calf_joint",
+            "RL_hip_joint",
+            "RL_thigh_joint",
+            "RL_calf_joint",
         ],
         'PD_stiffness': {'hip':   20.0,
                          'thigh': 20.0,
@@ -159,7 +159,7 @@ def get_cfgs():
         "yaw_range": [-90, 90],
     }
     obs_cfg = {
-        "num_obs": 48,
+        "num_obs": 45,
         "num_privileged_obs": 60,
         "obs_scales": {
             "lin_vel": 2.0,
@@ -187,7 +187,7 @@ def get_cfgs():
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
             "lin_vel_z": -5.0, #-5.0
-            "relative_base_height": -30.0, # -30.0
+            "relative_base_height": -10.0, # -30.0
             "orientation": -.001, #-30.0
             "ang_vel_xy": -0.05,
             "roll_penalty": -1.0,
@@ -212,8 +212,8 @@ def get_cfgs():
     }
     command_cfg = {
         "num_commands": 3,
-        "curriculum": False,
-        "curriculum_duration": 100, #1 calculated 1 iteration is 1 seocnd 2000 = 
+        "curriculum": True,
+        "curriculum_duration": 3000, #1 calculated 1 iteration is 1 seocnd 2000 = 
         "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],
