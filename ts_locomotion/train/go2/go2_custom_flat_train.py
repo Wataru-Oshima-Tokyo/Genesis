@@ -117,11 +117,11 @@ def get_cfgs():
             "RL_hip_joint",
             "RR_hip_joint",            
         ],
-        "termination_if_roll_greater_than": 100,  # degree. 
+        "termination_if_roll_greater_than": 170,  # degree. 
         "termination_if_pitch_greater_than": 180,
         "termination_if_height_lower_than": -40,
-        "termination_duration": 0.1, #seconds
-        "angle_termination_duration": 1.0, #seconds
+        "termination_duration": 1.0, #seconds
+        "angle_termination_duration": 5.0, #seconds
         # base pose
         "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
@@ -160,7 +160,7 @@ def get_cfgs():
     }
     obs_cfg = {
         "num_obs": 45,
-        "num_privileged_obs": 60,
+        "num_privileged_obs": 48,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
@@ -192,28 +192,28 @@ def get_cfgs():
             "ang_vel_xy": -0.05,
             "roll_penalty": -1.0,
             "collision": -2.0,
-            "front_feet_clearance": 10.0,
-            "rear_feet_clearance": 30.0,
+            # "front_feet_clearance": 10.0,
+            # "rear_feet_clearance": 30.0,
             "action_rate": -0.01,
             # "rear_feet_level_with_front": 1.0,
             # "hip_pos": -.1, #-1.0
-            "contact_no_vel": -0.002,
+            "contact_no_vel": -0.2,
             "dof_acc": -2.5e-7,
-            "contact": 0.01,
+            # "contact": 0.01,
             "dof_pos_limits": -10.0,
             "dof_vel": -1.0e-5,
             'torques': -0.00001,
             "termination": -30.0,
             # "base_upward_progress": 2.0,
-            # "calf_collision_low_clearance": -5.0,
+            "calf_collision_low_clearance": -5.0,
             "similar_to_default": -0.01,
-            "feet_contact_forces": -0.01,
+            "feet_contact_forces": -0.0001,
         },
     }
     command_cfg = {
         "num_commands": 3,
         "curriculum": True,
-        "curriculum_duration": 4000, #1 calculated 1 iteration is 1 seocnd 2000 = 
+        "curriculum_duration": 2000, #1 calculated 1 iteration is 1 seocnd 2000 = 
         "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],

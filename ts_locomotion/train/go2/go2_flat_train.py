@@ -117,11 +117,11 @@ def get_cfgs():
             "RL_hip_joint",
             "RR_hip_joint",            
         ],
-        "termination_if_roll_greater_than": 100,  # degree. 
+        "termination_if_roll_greater_than": 170,  # degree. 
         "termination_if_pitch_greater_than": 180,
         "termination_if_height_lower_than": -40,
-        "termination_duration": 0.1, #seconds
-        "angle_termination_duration": 1.0, #seconds
+        "termination_duration": 1.0, #seconds
+        "angle_termination_duration": 5.0, #seconds
         # base pose
         "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
@@ -153,14 +153,14 @@ def get_cfgs():
         'kp_scale_range': [0.8, 1.2],
         'randomize_kd_scale': False,
         'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": False,
+        "randomize_rot": True,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-90, 90],
     }
     obs_cfg = {
         "num_obs": 45,
-        "num_privileged_obs": 60,
+        "num_privileged_obs": 48,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
@@ -192,14 +192,14 @@ def get_cfgs():
             "ang_vel_xy": -0.05,
             "collision": -5.0,
             "roll_penalty": -1.0,
-            "front_feet_clearance": 10.0,
-            "rear_feet_clearance": 30.0,
+            # "front_feet_clearance": 10.0,
+            # "rear_feet_clearance": 30.0,
             "action_rate": -0.01,
             # "rear_feet_level_with_front": 1.0,
             # "hip_pos": -.1, #-1.0
-            "contact_no_vel": -0.002,
+            "contact_no_vel": -0.2,
             "dof_acc": -2.5e-7,
-            "contact": 0.01,
+            # "contact": 0.01,
             "dof_pos_limits": -10.0,
             "dof_vel": -1.0e-5,
             'torques': -0.00001,
@@ -207,7 +207,7 @@ def get_cfgs():
             # "base_upward_progress": 2.0,
             # "calf_collision_low_clearance": -5.0,
             "similar_to_default": -0.01,
-            "feet_contact_forces": -0.01,
+            "feet_contact_forces": -0.001,
         },
     }
     command_cfg = {

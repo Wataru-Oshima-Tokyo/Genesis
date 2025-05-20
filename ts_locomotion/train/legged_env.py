@@ -926,9 +926,9 @@ class LeggedEnv:
                 dof_pos_scaled,      # 12
                 dof_vel_scaled,      # 12
                 actions,              # 12
-                sin_phase, 
-                cos_phase,  
-                collision
+                # sin_phase,        # 4
+                # cos_phase,        # 4
+                # collision         # 4
             ],
             axis=-1,
         )
@@ -1002,8 +1002,6 @@ class LeggedEnv:
         noise_vec[9:9+self.num_actions] = self.noise_scales["dof_pos"] * noise_level * self.obs_scales["dof_pos"]
         noise_vec[9+self.num_actions:9+2*self.num_actions] = self.noise_scales["dof_vel"] * noise_level * self.obs_scales["dof_vel"]
         noise_vec[9+3*self.num_actions:9+4*self.num_actions] = 0. # previous actions
-        noise_vec[9+4*self.num_actions:9+4*self.num_actions+8] = 0. # sin/cos phase
-
 
         return noise_vec
 
@@ -1039,7 +1037,7 @@ class LeggedEnv:
             self.reset_buf |= pitch_timeout
             self.reset_buf |= roll_timeout
         # Timeout termination
-        if self.command_curriculum and self.curriculum_duration > self.curriculum_step*self.dt:
+        if self.command_curriculum and self.curriculum_step*self.dt < self.curriculum_duration:
             yaw_limit = 20
             exceed_yaw = torch.abs(self.base_euler[:, 2]) > math.radians(yaw_limit)
             self.reset_buf |= exceed_yaw
@@ -1144,11 +1142,11 @@ class LeggedEnv:
             self.episode_sums[key][envs_idx] = 0.0
 
         self.curriculum_step += 1
-        if self.command_curriculum and self.curriculum_duration > self.curriculum_step*self.dt:
+        if self.command_curriculum and self.curriculum_step*self.dt < self.curriculum_duration:
             if 0 in envs_idx:    # If environment 0 is being reset
                 self.assign_command_randomly_for_env0()
-        elif self.command_curriculum and self.curriculum_duration/2 > self.curriculum_step*self.dt:
-            self._resample_commands_without_omega(envs_idx)
+            if self.command_curriculum and self.curriculum_step*self.dt > self.curriculum_duration/2 :
+                self._resample_commands_without_omega(envs_idx)
         else:
             self._resample_commands(envs_idx)
             self.command_curriculum = False
@@ -1734,20 +1732,20 @@ class LeggedEnv:
         # Diagonal pairs: [FL, FR], [RL, RR]
         # Assume index 0 = FL, 1 = FR, 0 = RL, 1 = RR
         # Compare: FL vs RR, FR vs RL
-        rel_FL = front_rel[:, 0]
-        rel_FR = front_rel[:, 1]
-        rel_RL = rear_rel[:, 0]
-        rel_RR = rear_rel[:, 1]
+        rel_FR = front_rel[:, 0]
+        rel_FL = front_rel[:, 1]
+        rel_RR = rear_rel[:, 0]
+        rel_RL = rear_rel[:, 1]
 
         # Contact info: feet in contact = True
         contact_front = torch.norm(self.contact_forces[:, self.feet_front_indices, :3], dim=2) > 1.0  # (N, 2)
         contact_rear  = torch.norm(self.contact_forces[:, self.feet_rear_indices,  :3], dim=2) > 1.0  # (N, 2)
 
         # Diagonal contact status
-        FL_contact = contact_front[:, 0]
-        FR_contact = contact_front[:, 1]
-        RL_contact = contact_rear[:, 0]
-        RR_contact = contact_rear[:, 1]
+        FR_contact = contact_front[:, 0]
+        FL_contact = contact_front[:, 1]
+        RR_contact = contact_rear[:, 0]
+        RL_contact = contact_rear[:, 1]
 
         # diag1 = FL–RR; reward if at least one of them is in the air
         diag1_mask = ~(FL_contact & RR_contact)  # reward if not both in contact
@@ -1761,27 +1759,6 @@ class LeggedEnv:
 
         # Total reward
         return reward_diag1 + reward_diag2
-
-    # def _reward_calf_collision_low_clearance(self):
-    #     # Calf-specific collision detection
-    #     undesired_forces = torch.norm(self.contact_forces[:, self.calf_contact_indices, :], dim=-1)
-    #     collision_mask = (undesired_forces > 0.1).float()  # shape: (N, num_calf_links)
-
-    #     # Foot clearance
-    #     foot_z = self.feet_pos[:, :, 2]  # shape: (N, 4)
-    #     terrain_h = self.get_terrain_height_at(
-    #         self.feet_pos[:, :, 0],
-    #         self.feet_pos[:, :, 1]
-    #     )
-    #     clearance = foot_z - terrain_h  # shape: (N, 4)
-
-    #     low_clearance_mask = (clearance < 0.05).float()  # shape: (N, 4)
-
-    #     # Use the smaller dimension (in case of mismatch)
-    #     min_dim = min(collision_mask.shape[1], low_clearance_mask.shape[1])
-    #     penalty = (collision_mask[:, :min_dim] * low_clearance_mask[:, :min_dim]).sum(dim=1)
-
-    #     return penalty
 
 
     def _reward_calf_collision_low_clearance(self):

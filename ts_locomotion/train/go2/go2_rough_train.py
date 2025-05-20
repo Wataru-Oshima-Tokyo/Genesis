@@ -160,7 +160,7 @@ def get_cfgs():
     }
     obs_cfg = {
         "num_obs": 45,
-        "num_privileged_obs": 60,
+        "num_privileged_obs": 48,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
@@ -197,9 +197,9 @@ def get_cfgs():
             "action_rate": -0.01,
             # "rear_feet_level_with_front": 1.0,
             # "hip_pos": -.1, #-1.0
-            "contact_no_vel": -0.002,
+            "contact_no_vel": -0.02,
             "dof_acc": -2.5e-7,
-            "contact": 0.01,
+            # "contact": 0.01,
             "dof_pos_limits": -10.0,
             "dof_vel": -1.0e-5,
             'torques': -0.00001,
@@ -213,7 +213,7 @@ def get_cfgs():
     command_cfg = {
         "num_commands": 3,
         "curriculum": True,
-        "curriculum_duration": 3000, #1 calculated 1 iteration is 1 seocnd 2000 = 
+        "curriculum_duration": 2000, #1 calculated 1 iteration is 1 seocnd 2000 = 
         "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],
