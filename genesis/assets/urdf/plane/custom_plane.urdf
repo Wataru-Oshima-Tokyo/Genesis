@@ -135,7 +135,7 @@
 
   <link name="box_outer1_top">
     <visual><origin xyz="0 4.5 0.05"/><geometry><box size="9.0 0.2 0.1"/></geometry></visual>
-    <collision><origin xyz="0 4.5 0.075"/><geometry><box size="9.0 0.2 0.1"/></geometry></collision>
+    <collision><origin xyz="0 4.5 0.05"/><geometry><box size="9.0 0.2 0.1"/></geometry></collision>
   </link>
   <joint name="joint_outer1_top" type="fixed"><parent link="planeLink"/><child link="box_outer1_top"/><origin xyz="0 0 0"/></joint>
 

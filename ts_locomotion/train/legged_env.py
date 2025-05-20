@@ -1147,7 +1147,7 @@ class LeggedEnv:
         if self.command_curriculum and self.curriculum_duration > self.curriculum_step*self.dt:
             if 0 in envs_idx:    # If environment 0 is being reset
                 self.assign_command_randomly_for_env0()
-        elif self.command_curriculum and self.curriculum/2 > self.curriculum_step*selfdt:
+        elif self.command_curriculum and self.curriculum_duration/2 > self.curriculum_step*self.dt:
             self._resample_commands_without_omega(envs_idx)
         else:
             self._resample_commands(envs_idx)
