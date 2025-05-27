@@ -139,6 +139,7 @@ class OnPolicyRunner:
             cur_ireward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
 
         start_iter = self.current_learning_iteration
+        resume_base_iter = start_iter
         tot_iter = start_iter + num_learning_iterations
         for it in range(start_iter, tot_iter):
             start = time.time()
@@ -215,18 +216,19 @@ class OnPolicyRunner:
                 # Log information
                 self.log(locals())
                 # Save model
-                if it % self.save_interval == 0:
+                rel_it = it - resume_base_iter
+                if rel_it % self.save_interval == 0:
                     self.save(os.path.join(self.log_dir, f"model_{it}.pt"))
 
                 if self.logger_type == "wandb":
                     record_interval = self.cfg.get("record_interval", -1)
                     send_vieo_flag = False
                     if record_interval > 0:
-                        if it < 2500 and  it % record_interval == 0:
+                        if rel_it < 2500 and  rel_it % record_interval == 0:
                             send_vieo_flag = True
-                        elif it < 5000 and it % (2*record_interval) == 0:
+                        elif rel_it < 5000 and rel_it % (2*record_interval) == 0:
                             send_vieo_flag = True
-                        elif it % (3*record_interval) == 0:
+                        elif rel_it % (3*record_interval) == 0:
                             send_vieo_flag = True
                     if send_vieo_flag:
                         frames = self.env.get_recorded_frames()

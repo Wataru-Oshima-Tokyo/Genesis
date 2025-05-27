@@ -62,55 +62,55 @@ def get_train_cfg(exp_name, max_iterations):
 def get_cfgs():
     env_cfg = {
         "num_actions": 12,
+        "self_collision": True,
         "use_mjcf": True,
-        "robot_description": "xml/go1/go1.xml",
-        # "robot_description": "urdf/go1/urdf/go1.urdf",
-        # joint/link names
-        # joint/link names
+        "robot_description": "xml/go2/go2.xml",
         'links_to_keep': ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot',],
         "default_joint_angles": {  # [rad]
-            "FL_hip_joint": 0.1,
             "FR_hip_joint": -0.1,
-            "RL_hip_joint": 0.1,
+            "FL_hip_joint": 0.1,
             "RR_hip_joint": -0.1,
+            "RL_hip_joint": 0.1,
 
-            "FL_thigh_joint": 0.8,
             "FR_thigh_joint": 0.8,
-            "RL_thigh_joint": 1.0,
+            "FL_thigh_joint": 0.8,
             "RR_thigh_joint": 1.0,
+            "RL_thigh_joint": 1.0,
 
-            "FL_calf_joint": -1.5,
             "FR_calf_joint": -1.5,
-            "RL_calf_joint": -1.5,
+            "FL_calf_joint": -1.5,
             "RR_calf_joint": -1.5,
+            "RL_calf_joint": -1.5,
         },
-        "dof_names": [
-            "FL_hip_joint",
-            "FL_thigh_joint",
-            "FL_calf_joint",
+        "dof_names": [ #order matters!
             "FR_hip_joint",
             "FR_thigh_joint",
             "FR_calf_joint",
-            "RL_hip_joint",
-            "RL_thigh_joint",
-            "RL_calf_joint",
+            "FL_hip_joint",
+            "FL_thigh_joint",
+            "FL_calf_joint",
             "RR_hip_joint",
             "RR_thigh_joint",
             "RR_calf_joint",
+            "RL_hip_joint",
+            "RL_thigh_joint",
+            "RL_calf_joint",
         ],
-        'PD_stiffness': {'hip':   20.0,
-                         'thigh': 20.0,
-                          'calf': 20.0},
-        'PD_damping': {'hip':    0.5,
-                        'thigh': 0.5,
-                        'calf':  0.5},
-        'force_limit': {'hip':    23.5,
-                        'thigh':  23.5,
-                        'calf':   35.5},
+        'PD_stiffness': {'hip':   40.0,
+                         'thigh': 40.0,
+                          'calf': 40.0},
+        'PD_damping': {'hip':    1.0,
+                        'thigh': 1.0,
+                        'calf':  1.0},
+        'force_limit': {'hip':    23.7,
+                        'thigh':  23.7,
+                        'calf':   45.43},
         # termination
         'termination_contact_link_names': ['base'],
         'penalized_contact_link_names': ['base', 'thigh', 'calf'],
-        'feet_link_names': ['foot'],
+        'calf_link_name': ['calf'],
+        'feet_link_name': ['foot'],
+        'thigh_link_name': ['thigh'],
         'base_link_name': ['base'], 
         "hip_joint_names": [
             "FL_hip_joint",
@@ -119,10 +119,10 @@ def get_cfgs():
             "RR_hip_joint",            
         ],
         "termination_if_roll_greater_than": 170,  # degree. 
-        "termination_if_pitch_greater_than": 170,
+        "termination_if_pitch_greater_than": 180,
         "termination_if_height_lower_than": -40,
-        "termination_duration": 0.1, #seconds
-        "angle_termination_duration": 2.0, #seconds
+        "termination_duration": 1.0, #seconds
+        "angle_termination_duration": 5.0, #seconds
         # base pose
         "base_init_pos": [0.0, 0.0, 0.55],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
@@ -132,16 +132,16 @@ def get_cfgs():
         "simulate_action_latency": True,
         'send_timeouts': True,
         "clip_actions": 100.0,
-        'control_freq': 40,
-        'decimation': 5,
+        'control_freq': 50,
+        'decimation': 4,
         # random push
-        'push_interval_s': 5,
+        'push_interval_s': 10,
         'max_push_vel_xy': 1.0,
         # domain randomization
         'randomize_delay': True,
         'delay_range': [0.015, 0.03], #seconds        
         'randomize_friction': True,
-        'friction_range': [0.1, 1.5],
+        'friction_range': [0.05, 4.5],
         'randomize_base_mass': True,
         'added_mass_range': [-1., 3.],
         'randomize_com_displacement': True,
@@ -150,18 +150,18 @@ def get_cfgs():
         'motor_strength_range': [0.9, 1.1],
         'randomize_motor_offset': True,
         'motor_offset_range': [-0.02, 0.02],
-        'randomize_kp_scale': False,
-        'kp_scale_range': [0.8, 1.2],
-        'randomize_kd_scale': False,
-        'kd_scale_range': [0.8, 1.2],
-        "randomize_rot": True,
+        'randomize_kp_scale': True,
+        'kp_scale_range': [0.98, 1.02],
+        'randomize_kd_scale': True,
+        'kd_scale_range': [0.98, 1.02],
+        "randomize_rot": False,
         "pitch_range": [-40, 40],  # degrees
         "roll_range": [-50, 50],
         "yaw_range": [-180, 180],
     }
     obs_cfg = {
         "num_obs": 45,
-        "num_privileged_obs": 56,
+        "num_privileged_obs": 60,
         "obs_scales": {
             "lin_vel": 2.0,
             "ang_vel": 0.25,
@@ -174,12 +174,13 @@ def get_cfgs():
 
     reward_cfg = {
         "tracking_sigma": 0.25,
-        "base_height_target": 0.35,
-        "relative_base_height_target": 0.35,
+        "base_height_target": 0.32,
+        "relative_base_height_target": 0.32,
         "step_period": 1.0, #0.8
         "step_offset": 0.5, #0.5
         "front_feet_relative_height": 0.15,
         "rear_feet_relative_height": 0.15,
+        "clearance_height_target": -0.22,
         "soft_dof_pos_limit": 0.9,
         "soft_torque_limit": 1.0,
         "only_positive_rewards": True,
@@ -187,29 +188,39 @@ def get_cfgs():
         "reward_scales": {
             "tracking_lin_vel": 1.5,
             "tracking_ang_vel": 0.75,
-            "lin_vel_z": -10.0, #-5.0
+            "lin_vel_z": -2.0, #-5.0
             "relative_base_height": -30.0, # -30.0
             "orientation": -30.0,
             "ang_vel_xy": -0.05,
-            "collision": -2.0,
-            "front_feet_clearance": 10.0,
-            "rear_feet_clearance": 10.0,
+            "collision": -5.0,
+            # "roll_penalty": -0.1,
+            # "front_leg_retraction": -1.0,
+            # "thigh_retraction": 1.0,
+            "foot_clearance": -0.5,
+            # "front_feet_clearance": 10.0,
+            # "rear_feet_clearance": 10.0,
             "action_rate": -0.01,
-            # "feet_air_time": 1.0,
-            "contact_no_vel": -0.1,
-            "dof_acc": -2.5e-7,
+            # "rear_feet_level_with_front": 1.0,
             # "hip_pos": -.1, #-1.0
-            "contact": 0.1,
+            # "contact_no_vel": -0.2,
+            "dof_acc": -2.5e-7,
+            # "contact": 0.01,
             "dof_pos_limits": -10.0,
-            "dof_vel": -1.0e-4,
-            'torques': -0.0001,
+            "dof_vel": 0.0,
+            "torques": 0.0,
+            'powers': -2e-5,
             "termination": -30.0,
-            "feet_contact_forces": -1.0,
+            # "base_upward_progress": 2.0,
+            # "calf_collision_low_clearance": -5.0,
+            "similar_to_default": -0.01,
+            "feet_contact_forces": -0.001,
         },
     }
     command_cfg = {
         "num_commands": 3,
-        "lin_vel_x_range": [-1.0, 1.5],
+        "curriculum": False,
+        "curriculum_duration": 0, #1 calculated 1 iteration is 1 seocnd 2000 = 
+        "lin_vel_x_range": [-1.0, 1.0],
         "lin_vel_y_range": [-0.5, 0.5],
         "ang_vel_range": [-1.0, 1.0],
     }
@@ -226,14 +237,18 @@ def get_cfgs():
         }
     }
     terrain_cfg = {
-        "terrain_type": "plane", #plane
+        "terrain_type": "plane", #plane, trimesh, custom_plane
         "subterrain_size": 4.0,
         "horizontal_scale": 0.05,
         "vertical_scale": 0.005,
-        "cols": 2,  #should be more than 5
-        "rows": 2,   #should be more than 5
+        "cols": 5,  #should be more than 5
+        "rows": 5,   #should be more than 5
         "selected_terrains":{
-            "flat_terrain" : {"probability": 0.1},
+            "flat_terrain" : {"probability": 0.2},
+            # "blocky_terrain" : {"probability": 0.2},
+            "stamble_terrain" : {"probability": 0.2},
+            "discrete_obstacles_terrain" : {"probability": 0.1},
+            "pyramid_stairs_terrain" : {"probability": 0.2},
         }
     }
 
@@ -242,17 +257,16 @@ def get_cfgs():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--exp_name", type=str, default="go1_walking")
+    parser.add_argument("-e", "--exp_name", type=str, default="go2_walking")
     parser.add_argument("-B", "--num_envs", type=int, default=4096) #10000
-    parser.add_argument("--max_iterations", type=int, default=2000)
+    parser.add_argument("--max_iterations", type=int, default=10000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
-    parser.add_argument("--view", action="store_true", help="If you would like to see how robot is trained")
+    parser.add_argument("--vis", action="store_true", help="If you would like to see how robot is trained")
     parser.add_argument("--wandb_username", type=str, default="wataru-oshima-techshare")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
-
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     log_dir_ = os.path.join(BASE_DIR, "logs", args.exp_name)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -269,7 +283,7 @@ def main():
         reward_cfg=reward_cfg, 
         command_cfg=command_cfg,        
         terrain_cfg=terrain_cfg,        
-        show_viewer=args.view,
+        show_viewer=args.vis,
 
     )
 

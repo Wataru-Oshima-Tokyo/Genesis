@@ -40,6 +40,7 @@ def main():
         command_cfg=command_cfg,
         terrain_cfg=terrain_cfg,
         show_viewer=True,
+        eval_=True,
     )
 
     
