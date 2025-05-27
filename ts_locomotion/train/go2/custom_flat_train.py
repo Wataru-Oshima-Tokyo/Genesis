@@ -9,21 +9,8 @@ from go2_base import train_main
 # ---- patch only the bits that change --------------------------------------
 
 env_cfg_patch = {
-
     "self_collision": False,
     "randomize_rot": True,
-    "dof_lower_limit": [ #order matters!
-        -0.8, -0.45, -2.5,
-        -0.5, -0.45, -2.5,
-        -0.8, -0.4,  -2.5,
-        -0.5, -0.4,  -2.5,
-    ],
-    "dof_upper_limit": [ #order matters!
-        0.5, 2.3, -0.8,
-        0.7, 2.3, -0.8,
-        0.5, 2.3, -0.8,
-        0.7, 2.3, -0.8,
-    ],
     "base_init_pos": [0.0, 0.0, 0.45],
     'max_push_vel_xy': 0.0,
     "episode_length_s": 30.0,

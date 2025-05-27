@@ -108,6 +108,18 @@ def get_cfgs():
             "RL_thigh_joint",
             "RL_calf_joint",
         ],
+        "dof_lower_limit": [ #order matters!
+            -0.8, 0.4, -2.5,
+            -0.5, 0.4, -2.5,
+            -0.8, -0.4,  -2.5,
+            -0.5, -0.4,  -2.5,
+        ],
+        "dof_upper_limit": [ #order matters!
+            0.5, 2.3, -0.8,
+            0.8, 2.3, -0.8,
+            0.5, 2.3, -0.8,
+            0.8, 2.3, -0.8,
+        ],
         'PD_stiffness': {'hip':   40.0,
                          'thigh': 40.0,
                           'calf': 40.0},
@@ -173,8 +185,8 @@ def get_cfgs():
         'randomize_kd_scale': True,
         'kd_scale_range': [0.98, 1.02],
         "randomize_rot": True,
-        "pitch_range": [-40, 40],  # degrees
-        "roll_range": [-50, 50],
+        "pitch_range": [-30, 30],  # degrees
+        "roll_range": [-30, 30],
         "yaw_range": [-180, 180],
     }
     obs_cfg = {

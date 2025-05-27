@@ -15,29 +15,15 @@ from go2_base import train_main
 env_cfg_patch = {
     "self_collision": False,
     "randomize_rot": True,
-    "dof_lower_limit": [ #order matters!
-        -0.8, 0.4, -2.5,
-        -0.5, 0.4, -2.5,
-        -0.8, -0.4,  -2.5,
-        -0.5, -0.4,  -2.5,
-    ],
-    "dof_upper_limit": [ #order matters!
-        0.5, 2.3, -0.8,
-        0.8, 2.3, -0.8,
-        0.5, 2.3, -0.8,
-        0.8, 2.3, -0.8,
-    ],
-    # "penalized_contact_link_names": ["base", "thigh", "calf"],
     "base_init_pos": [0.0, 0.0, 0.45],
-    # 'max_push_vel_xy': 0.0,
     "termination_if_roll_greater_than": 100,
 }
 
 reward_cfg_patch = {
     "soft_dof_pos_limit": 1.0,
     "reward_scales": {
-        "tracking_lin_vel_in_world": 1.5,
-        "tracking_ang_vel_in_world": 0.75,
+        "tracking_lin_vel": 1.5,
+        "tracking_ang_vel": 0.75,
         "lin_vel_z": -2.0,
         "relative_base_height": -30.0,
         "orientation": -30.0,
