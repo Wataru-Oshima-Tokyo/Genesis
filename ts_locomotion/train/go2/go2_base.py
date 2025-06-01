@@ -81,18 +81,18 @@ def get_cfgs():
         "default_joint_angles": {  # [rad]
             "FR_hip_joint": -0.1,
             "FL_hip_joint": 0.1,
-            "RR_hip_joint": -0.1,
-            "RL_hip_joint": 0.1,
+            "RR_hip_joint": -0.0,
+            "RL_hip_joint": 0.0,
 
             "FR_thigh_joint": 0.8,
             "FL_thigh_joint": 0.8,
             "RR_thigh_joint": 1.0,
             "RL_thigh_joint": 1.0,
 
-            "FR_calf_joint": -1.5,
-            "FL_calf_joint": -1.5,
-            "RR_calf_joint": -1.5,
-            "RL_calf_joint": -1.5,
+            "FR_calf_joint": -1.2,
+            "FL_calf_joint": -1.2,
+            "RR_calf_joint": -1.2,
+            "RL_calf_joint": -1.2,
         },
         "dof_names": [ #order matters!
             "FR_hip_joint",
@@ -109,16 +109,16 @@ def get_cfgs():
             "RL_calf_joint",
         ],
         "dof_lower_limit": [ #order matters!
-            -0.8, 0.4, -2.5,
-            -0.5, 0.4, -2.5,
-            -0.8, -0.4,  -2.5,
-            -0.5, -0.4,  -2.5,
+            -0.8, 0.1, -2.5,
+            -0.5, 0.1, -2.5,
+            -0.8, 0.2,  -2.5,
+            -0.5, 0.2,  -2.5,
         ],
         "dof_upper_limit": [ #order matters!
-            0.5, 2.3, -0.8,
-            0.8, 2.3, -0.8,
-            0.5, 2.3, -0.8,
-            0.8, 2.3, -0.8,
+            0.5, 2.6, -0.8,
+            0.8, 2.6, -0.8,
+            0.5, 2.0, -0.9,
+            0.8, 2.0, -0.9,
         ],
         'PD_stiffness': {'hip':   40.0,
                          'thigh': 40.0,
@@ -131,7 +131,7 @@ def get_cfgs():
                         'calf':   45.43},
         # termination
         'termination_contact_link_names': ['base'],
-        'penalized_contact_link_names': ['base', 'thigh'],
+        'penalized_contact_link_names': ['base', 'thigh', "calf"],
         'calf_link_name': ['calf'],
         'feet_link_name': ['foot'],
         'thigh_link_name': ['thigh'],
@@ -150,7 +150,7 @@ def get_cfgs():
         ],
         "termination_if_roll_greater_than": 170,  # degree. 
         "termination_if_pitch_greater_than": 180,
-        "termination_if_height_lower_than": -40,
+        "termination_if_relative_height_lower_than": 0.15,
         "termination_duration": 1.0, #seconds
         "angle_termination_duration": 5.0, #seconds
         # base pose
@@ -204,8 +204,8 @@ def get_cfgs():
 
     reward_cfg = {
         "tracking_sigma": 0.25,
-        "base_height_target": 0.32,
-        "relative_base_height_target": 0.32,
+        "base_height_target": 0.36,
+        "relative_base_height_target": 0.36,
         "step_period": 1.0, #0.8
         "step_offset": 0.5, #0.5
         "front_feet_relative_height": 0.15,
@@ -293,8 +293,8 @@ def train_main(
 ):
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default=default_exp_name)
-    parser.add_argument("-B", "--num_envs", type=int, default=4096) #10000
-    parser.add_argument("--max_iterations", type=int, default=10000)
+    parser.add_argument("-B", "--num_envs", type=int, default=4096) #10000 8192
+    parser.add_argument("--max_iterations", type=int, default=5000)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint if this flag is set")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--vis", action="store_true", help="If you would like to see how robot is trained")

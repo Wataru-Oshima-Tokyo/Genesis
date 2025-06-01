@@ -99,7 +99,6 @@
             <geom size="0.011 0.0325" pos="0.02 0 -0.148" quat="0.999688 0 0.0249974 0" type="cylinder" class="collision"/>
             <body name="FR_foot" pos="0 0 -0.213">
               <geom name="FR" class="foot"/>
-              <site name="FR" pos="0 0 0" type="sphere" size="0.023" group="5"/>
             </body>
           </body>
         </body>
@@ -129,7 +128,6 @@
             <geom size="0.011 0.0325" pos="0.02 0 -0.148" quat="0.999688 0 0.0249974 0" type="cylinder" class="collision"/>
             <body name="FL_foot" pos="0 0 -0.213">
               <geom name="FL" class="foot"/>
-              <site name="FL" pos="0 0 0" type="sphere" size="0.023" group="5"/>
             </body>
           </body>
         </body>
@@ -159,7 +157,6 @@
             <geom size="0.011 0.0325" pos="0.02 0 -0.148" quat="0.999688 0 0.0249974 0" type="cylinder" class="collision"/>
             <body name="RR_foot" pos="0 0 -0.213">
               <geom name="RR" class="foot"/>
-              <site name="RR" pos="0 0 0" type="sphere" size="0.023" group="5"/>
             </body>
           </body>
         </body>
@@ -189,7 +186,6 @@
             <geom size="0.011 0.0325" pos="0.02 0 -0.148" quat="0.999688 0 0.0249974 0" type="cylinder" class="collision"/>
             <body name="RL_foot" pos="0 0 -0.213">
               <geom name="RL" class="foot"/>
-              <site name="RL" pos="0 0 0" type="sphere" size="0.023" group="5"/>
             </body>
           </body>
         </body>

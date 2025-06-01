@@ -14,9 +14,10 @@ from go2_base import train_main
 
 env_cfg_patch = {
     "self_collision": False,
-    "randomize_rot": True,
-    "base_init_pos": [0.0, 0.0, 0.45],
+    "randomize_rot": False,
+    "base_init_pos": [0.0, 0.0, 0.40],
     "termination_if_roll_greater_than": 100,
+    "angle_termination_duration": 5.0, #seconds
 }
 
 reward_cfg_patch = {
@@ -24,24 +25,24 @@ reward_cfg_patch = {
     "reward_scales": {
         "tracking_lin_vel": 1.5,
         "tracking_ang_vel": 0.75,
-        "lin_vel_z": -2.0,
+        "lin_vel_z": -5.0,
         "relative_base_height": -30.0,
-        "orientation": -30.0,
+        "orientation": -1.0,
         "ang_vel_xy": -0.05,
-        "collision": -5.0,
-        "front_feet_clearance": 30.0,
-        "rear_feet_clearance": 30.0,
-        "foot_clearance": -0.5,
+        "collision": -10.0,
+        "front_feet_clearance": 10.0,
+        "rear_feet_clearance": 10.0,
+        # "foot_clearance": -0.5,
         "action_rate": -0.01,
         "dof_acc": -2.5e-7,
-        "dof_pos_limits": -50.0,
-        "dof_vel": 0.0,
-        "torques": 0.0,
+        "dof_pos_limits": -10.0,
         "powers": -2e-5,
         "termination": -30.0,
-        "similar_to_default": -0.01,
+        # "similar_to_default": -0.05,
         "feet_contact_forces": -0.001,
         "stand_still": -0.5,
+        "both_front_feet_airborne": -1.0,
+        "both_rear_feet_airborne": -1.0
     },
 }
 
@@ -59,6 +60,9 @@ command_cfg_patch = {
     "lin_vel_x_range": [-1.0, 1.0],
     "lin_vel_y_range": [-0.5, 0.5],
     "ang_vel_range": [-1.0, 1.0],
+    # "lin_vel_x_range": [-0.0, 0.0],
+    # "lin_vel_y_range": [-0.0, 0.0],
+    # "ang_vel_range": [-0.0, 0.0],
 }
 
 
