@@ -20,7 +20,7 @@ from . import urdf as uu
 from .misc import get_assets_dir, redirect_libc_stderr
 
 
-def build_model(xml, discard_visual, merge_fixed_links=False, links_to_keep=()):
+def build_model(xml, discard_visual, merge_fixed_links=True, links_to_keep=()):
     if isinstance(xml, (str, Path)):
         # Make sure that it is pointing to a valid XML content (either file path or string)
         path = os.path.join(get_assets_dir(), xml)
