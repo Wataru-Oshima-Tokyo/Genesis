@@ -1,5 +1,6 @@
 logs/
 tmp/
+wandb/
 MUJOCO_LOG.TXT
 imgui.ini
 .DS_Store

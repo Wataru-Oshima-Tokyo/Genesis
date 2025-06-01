@@ -80,7 +80,7 @@
       <site name="head" pos="0.3 0 0" rgba="1 0 0 1" size="0.02" group="5"/>
       <inertial pos="0.0223 0.002 -0.0005" quat="-0.00342088 0.705204 0.000106698 0.708996" mass="5.204"
         diaginertia="0.0716565 0.0630105 0.0168101"/>
-      <freejoint/>
+      <freejoint name="root"/>
       <geom class="visual" mesh="trunk"/>
       <geom class="collision" size="0.125 0.04 0.057" type="box"/>
       <geom class="collision" quat="1 0 1 0" pos="0 -0.04 0" size="0.058 0.125" type="cylinder"/>
@@ -91,6 +91,7 @@
       <geom class="collision" pos="0.25 0 -0.05" size="0.01 0.06" quat="1 1 0 0"/>
       <geom class="collision" pos="0.255 0 0.0355" size="0.021 0.052" quat="1 1 0 0"/>
       <site name="imu" pos="0 0 0"/>
+      
       <body name="FL_hip" pos="0.1881 0.04675 0">
         <inertial pos="-0.0049166 -0.00762615 -8.865e-05" quat="0.482891 0.495027 0.514169 0.507341" mass="0.68"
           diaginertia="0.000734064 0.000468438 0.000398719"/>

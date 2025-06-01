@@ -1,0 +1,527 @@
+<?xml version="1.0" ?>
+<robot name="plane">
+
+  <!-- Base plane -->
+  <link name="planeLink">
+  <contact>
+      <lateral_friction value="0.01"/>
+  </contact>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 -0.1"/>
+       <mass value="1.0"/>
+       <inertia ixx="1.0" ixy="0" ixz="0" iyy="1.0" iyz="0" izz="1.0"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -0.1"/>
+      <geometry>
+				<mesh filename="plane100_light.obj" scale="1 1 1"/>
+      </geometry>
+       <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -5"/>
+      <geometry>
+	 	<box size="200 200 10"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Inner Rectangle (2m) -->
+  <link name="box_inner1_top">
+    <visual><origin xyz="0 2.0 0.035"/><geometry><box size="4.0 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 2.0 0.035"/><geometry><box size="4.0 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner1_top" type="fixed"><parent link="planeLink"/><child link="box_inner1_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner1_bottom">
+    <visual><origin xyz="0 -2.0 0.035"/><geometry><box size="4.0 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -2.0 0.035"/><geometry><box size="4.0 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner1_bottom" type="fixed"><parent link="planeLink"/><child link="box_inner1_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner1_left">
+    <visual><origin xyz="-2.0 0 0.035"/><geometry><box size="0.2 4.0 0.03"/></geometry></visual>
+    <collision><origin xyz="-2.0 0 0.035"/><geometry><box size="0.2 4.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner1_left" type="fixed"><parent link="planeLink"/><child link="box_inner1_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner1_right">
+    <visual><origin xyz="2.0 0 0.035"/><geometry><box size="0.2 4.0 0.03"/></geometry></visual>
+    <collision><origin xyz="2.0 0 0.035"/><geometry><box size="0.2 4.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner1_right" type="fixed"><parent link="planeLink"/><child link="box_inner1_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+  <link name="box_inner2_top">
+    <visual><origin xyz="0 2.2 0.085"/><geometry><box size="4.4 0.20 0.03"/></geometry></visual>
+    <collision><origin xyz="0 2.2 0.03"/><geometry><box size="4.4 0.20 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner2_top" type="fixed"><parent link="planeLink"/><child link="box_inner2_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner2_bottom">
+    <visual><origin xyz="0 -2.2 0.085"/><geometry><box size="4.4 0.20 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -2.2 0.085"/><geometry><box size="4.4 0.20 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner2_bottom" type="fixed"><parent link="planeLink"/><child link="box_inner2_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner2_left">
+    <visual><origin xyz="-2.2 0 0.085"/><geometry><box size="0.20 4.4 0.03"/></geometry></visual>
+    <collision><origin xyz="-2.2 0 0.085"/><geometry><box size="0.20 4.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner2_left" type="fixed"><parent link="planeLink"/><child link="box_inner2_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner2_right">
+    <visual><origin xyz="2.2 0 0.085"/><geometry><box size="0.20 4.4 0.03"/></geometry></visual>
+    <collision><origin xyz="2.2 0 0.085"/><geometry><box size="0.20 4.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner2_right" type="fixed"><parent link="planeLink"/><child link="box_inner2_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+  <link name="box_inner3_top">
+    <visual><origin xyz="0 2.4 0.135"/><geometry><box size="4.8 0.20 0.03"/></geometry></visual>
+    <collision><origin xyz="0 2.4 0.135"/><geometry><box size="4.8 0.20 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner3_top" type="fixed"><parent link="planeLink"/><child link="box_inner3_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner3_bottom">
+    <visual><origin xyz="0 -2.4 0.135"/><geometry><box size="4.8 0.20 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -2.4 0.135"/><geometry><box size="4.8 0.20 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner3_bottom" type="fixed"><parent link="planeLink"/><child link="box_inner3_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner3_left">
+    <visual><origin xyz="-2.4 0 0.135"/><geometry><box size="0.20 4.8 0.03"/></geometry></visual>
+    <collision><origin xyz="-2.4 0 0.135"/><geometry><box size="0.20 4.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner3_left" type="fixed"><parent link="planeLink"/><child link="box_inner3_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_inner3_right">
+    <visual><origin xyz="2.4 0 0.135"/><geometry><box size="0.20 4.8 0.03"/></geometry></visual>
+    <collision><origin xyz="2.4 0 0.135"/><geometry><box size="0.20 4.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_inner3_right" type="fixed"><parent link="planeLink"/><child link="box_inner3_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+  <link name="box_top">
+    <visual><origin xyz="0 3.4 0.085"/><geometry><box size="6.8 0.15 0.03"/></geometry></visual>
+    <collision><origin xyz="0 3.4 0.085"/><geometry><box size="6.8 0.15 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_top" type="fixed"><parent link="planeLink"/><child link="box_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_bottom">
+    <visual><origin xyz="0 -3.4 0.085"/><geometry><box size="6.8 0.15 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -3.4 0.085"/><geometry><box size="6.8 0.15 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_bottom" type="fixed"><parent link="planeLink"/><child link="box_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_left">
+    <visual><origin xyz="-3.4 0 0.085"/><geometry><box size="0.15 6.8 0.03"/></geometry></visual>
+    <collision><origin xyz="-3.4 0 0.085"/><geometry><box size="0.15 6.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_left" type="fixed"><parent link="planeLink"/><child link="box_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_right">
+    <visual><origin xyz="3.4 0 0.085"/><geometry><box size="0.15 6.8 0.03"/></geometry></visual>
+    <collision><origin xyz="3.4 0 0.085"/><geometry><box size="0.15 6.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_right" type="fixed"><parent link="planeLink"/><child link="box_right"/><origin xyz="0 0 0"/></joint>
+
+  <!-- Outer Rectangle (4m, 1m away from inner) -->
+  <!-- These are 10cm tall, so z = 0.05 and size.z = 0.10 -->
+
+  <link name="box_outer1_top">
+    <visual><origin xyz="0 4.5 0.085"/><geometry><box size="9.0 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 4.5 0.085"/><geometry><box size="9.0 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer1_top" type="fixed"><parent link="planeLink"/><child link="box_outer1_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer1_bottom">
+    <visual><origin xyz="0 -4.5 0.085"/><geometry><box size="9.0 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -4.5 0.085"/><geometry><box size="9.0 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer1_bottom" type="fixed"><parent link="planeLink"/><child link="box_outer1_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer1_left">
+    <visual><origin xyz="-4.5 0 0.085"/><geometry><box size="0.2 9.0 0.03"/></geometry></visual>
+    <collision><origin xyz="-4.5 0 0.085"/><geometry><box size="0.2 9.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer1_left" type="fixed"><parent link="planeLink"/><child link="box_outer1_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer1_right">
+    <visual><origin xyz="4.5 0 0.085"/><geometry><box size="0.2 9.0 0.03"/></geometry></visual>
+    <collision><origin xyz="4.5 0 0.085"/><geometry><box size="0.2 9.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer1_right" type="fixed"><parent link="planeLink"/><child link="box_outer1_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+  <link name="box_outer2_top">
+    <visual><origin xyz="0 4.7 0.185"/><geometry><box size="9.4 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 4.7 0.185"/><geometry><box size="9.4 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer2_top" type="fixed"><parent link="planeLink"/><child link="box_outer2_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer2_bottom">
+    <visual><origin xyz="0 -4.7 0.185"/><geometry><box size="9.4 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -4.7 0.185"/><geometry><box size="9.4 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer2_bottom" type="fixed"><parent link="planeLink"/><child link="box_outer2_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer2_left">
+    <visual><origin xyz="-4.7 0 0.185"/><geometry><box size="0.2 9.4 0.03"/></geometry></visual>
+    <collision><origin xyz="-4.7 0 0.185"/><geometry><box size="0.2 9.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer2_left" type="fixed"><parent link="planeLink"/><child link="box_outer2_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer2_right">
+    <visual><origin xyz="4.7 0 0.185"/><geometry><box size="0.2 9.4 0.03"/></geometry></visual>
+    <collision><origin xyz="4.7 0 0.185"/><geometry><box size="0.2 9.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer2_right" type="fixed"><parent link="planeLink"/><child link="box_outer2_right"/><origin xyz="0 0 0"/></joint>
+
+
+  <link name="box_outer3_top">
+    <visual><origin xyz="0 4.9 0.285"/><geometry><box size="9.8 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 4.9 0.285"/><geometry><box size="9.8 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer3_top" type="fixed"><parent link="planeLink"/><child link="box_outer3_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer3_bottom">
+    <visual><origin xyz="0 -4.9 0.285"/><geometry><box size="9.8 0.2 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -4.9 0.285"/><geometry><box size="9.8 0.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer3_bottom" type="fixed"><parent link="planeLink"/><child link="box_outer3_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer3_left">
+    <visual><origin xyz="-4.9 0 0.285"/><geometry><box size="0.2 9.8 0.03"/></geometry></visual>
+    <collision><origin xyz="-4.9 0 0.285"/><geometry><box size="0.2 9.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer3_left" type="fixed"><parent link="planeLink"/><child link="box_outer3_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_outer3_right">
+    <visual><origin xyz="4.9 0 0.285"/><geometry><box size="0.2 9.8 0.03"/></geometry></visual>
+    <collision><origin xyz="4.9 0 0.285"/><geometry><box size="0.2 9.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="joint_outer3_right" type="fixed"><parent link="planeLink"/><child link="box_outer3_right"/><origin xyz="0 0 0"/></joint>
+
+ 
+  <link name="box_stair1_top">
+    <visual><origin xyz="0 6.0 0.135"/><geometry><box size="12.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 6.0 0.135"/><geometry><box size="12.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair1_top" type="fixed"><parent link="planeLink"/><child link="box_stair1_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair1_bottom">
+    <visual><origin xyz="0 -6.0 0.135"/><geometry><box size="12.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -6.0 0.135"/><geometry><box size="12.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair1_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair1_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair1_left">
+    <visual><origin xyz="-6.0 0 0.135"/><geometry><box size="0.3 12.0 0.03"/></geometry></visual>
+    <collision><origin xyz="-6.0 0 0.135"/><geometry><box size="0.3 12.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair1_left" type="fixed"><parent link="planeLink"/><child link="box_stair1_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair1_right">
+    <visual><origin xyz="6.0 0 0.135"/><geometry><box size="0.3 12.0 0.03"/></geometry></visual>
+    <collision><origin xyz="6.0 0 0.135"/><geometry><box size="0.3 12.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair1_right" type="fixed"><parent link="planeLink"/><child link="box_stair1_right"/><origin xyz="0 0 0"/></joint>
+
+
+  <link name="box_stair2_top">
+    <visual><origin xyz="0 6.3 0.285"/><geometry><box size="12.6 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 6.3 0.285"/><geometry><box size="12.6 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair2_top" type="fixed"><parent link="planeLink"/><child link="box_stair2_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair2_bottom">
+    <visual><origin xyz="0 -6.3 0.285"/><geometry><box size="12.6 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -6.3 0.285"/><geometry><box size="12.6 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair2_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair2_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair2_left">
+    <visual><origin xyz="-6.3 0 0.285"/><geometry><box size="0.3 12.6 0.03"/></geometry></visual>
+    <collision><origin xyz="-6.3 0 0.285"/><geometry><box size="0.3 12.6 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair2_left" type="fixed"><parent link="planeLink"/><child link="box_stair2_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair2_right">
+    <visual><origin xyz="6.3 0 0.285"/><geometry><box size="0.3 12.6 0.03"/></geometry></visual>
+    <collision><origin xyz="6.3 0 0.285"/><geometry><box size="0.3 12.6 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair2_right" type="fixed"><parent link="planeLink"/><child link="box_stair2_right"/><origin xyz="0 0 0"/></joint>
+
+
+  <link name="box_stair3_top">
+    <visual><origin xyz="0 6.6 0.435"/><geometry><box size="13.2 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 6.6 0.435"/><geometry><box size="13.2 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair3_top" type="fixed"><parent link="planeLink"/><child link="box_stair3_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair3_bottom">
+    <visual><origin xyz="0 -6.6 0.435"/><geometry><box size="13.2 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -6.6 0.435"/><geometry><box size="13.2 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair3_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair3_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair3_left">
+    <visual><origin xyz="-6.6 0 0.435"/><geometry><box size="0.3 13.2 0.03"/></geometry></visual>
+    <collision><origin xyz="-6.6 0 0.435"/><geometry><box size="0.3 13.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair3_left" type="fixed"><parent link="planeLink"/><child link="box_stair3_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair3_right">
+    <visual><origin xyz="6.6 0 0.435"/><geometry><box size="0.3 13.2 0.03"/></geometry></visual>
+    <collision><origin xyz="6.6 0 0.435"/><geometry><box size="0.3 13.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair3_right" type="fixed"><parent link="planeLink"/><child link="box_stair3_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+
+
+  <link name="box_down1_top">
+    <visual><origin xyz="0 6.9 0.435"/><geometry><box size="13.8 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 6.9 0.435"/><geometry><box size="13.8 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down1_top" type="fixed"><parent link="planeLink"/><child link="box_down1_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down1_bottom">
+    <visual><origin xyz="0 -6.9 0.435"/><geometry><box size="13.8 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -6.9 0.435"/><geometry><box size="13.8 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down1_bottom" type="fixed"><parent link="planeLink"/><child link="box_down1_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down1_left">
+    <visual><origin xyz="-6.9 0 0.435"/><geometry><box size="0.3 13.8 0.03"/></geometry></visual>
+    <collision><origin xyz="-6.9 0 0.435"/><geometry><box size="0.3 13.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down1_left" type="fixed"><parent link="planeLink"/><child link="box_down1_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down1_right">
+    <visual><origin xyz="6.9 0 0.435"/><geometry><box size="0.3 13.8 0.03"/></geometry></visual>
+    <collision><origin xyz="6.9 0 0.435"/><geometry><box size="0.3 13.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down1_right" type="fixed"><parent link="planeLink"/><child link="box_down1_right"/><origin xyz="0 0 0"/></joint>
+
+
+  <link name="box_down2_top">
+    <visual><origin xyz="0 7.2 0.285"/><geometry><box size="14.4 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 7.2 0.285"/><geometry><box size="14.4 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down2_top" type="fixed"><parent link="planeLink"/><child link="box_down2_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down2_bottom">
+    <visual><origin xyz="0 -7.2 0.285"/><geometry><box size="14.4 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -7.2 0.285"/><geometry><box size="14.4 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down2_bottom" type="fixed"><parent link="planeLink"/><child link="box_down2_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down2_left">
+    <visual><origin xyz="-7.2 0 0.285"/><geometry><box size="0.3 14.4 0.03"/></geometry></visual>
+    <collision><origin xyz="-7.2 0 0.285"/><geometry><box size="0.3 14.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down2_left" type="fixed"><parent link="planeLink"/><child link="box_down2_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down2_right">
+    <visual><origin xyz="7.2 0 0.285"/><geometry><box size="0.3 14.4 0.03"/></geometry></visual>
+    <collision><origin xyz="7.2 0 0.285"/><geometry><box size="0.3 14.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down2_right" type="fixed"><parent link="planeLink"/><child link="box_down2_right"/><origin xyz="0 0 0"/></joint>
+
+
+  <link name="box_down3_top">
+    <visual><origin xyz="0 7.5 0.135"/><geometry><box size="15.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 7.5 0.135"/><geometry><box size="15.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down3_top" type="fixed"><parent link="planeLink"/><child link="box_down3_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down3_bottom">
+    <visual><origin xyz="0 -7.5 0.135"/><geometry><box size="15.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -7.5 0.135"/><geometry><box size="15.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down3_bottom" type="fixed"><parent link="planeLink"/><child link="box_down3_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down3_left">
+    <visual><origin xyz="-7.5 0 0.135"/><geometry><box size="0.3 15.0 0.03"/></geometry></visual>
+    <collision><origin xyz="-7.5 0 0.135"/><geometry><box size="0.3 15.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down3_left" type="fixed"><parent link="planeLink"/><child link="box_down3_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_down3_right">
+    <visual><origin xyz="7.5 0 0.135"/><geometry><box size="0.3 15.0 0.03"/></geometry></visual>
+    <collision><origin xyz="7.5 0 0.135"/><geometry><box size="0.3 15.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_down3_right" type="fixed"><parent link="planeLink"/><child link="box_down3_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+
+
+  <!-- 20cm step stairs set, 1m away in y (+10.0) -->
+
+    <!-- Step 1 (z=0.10, height=0.20) -->
+  <!-- OUTER (1m offset) 20cm step stairs set -->
+
+  <!-- Step 1 (z=0.10, height=0.20) -->
+  <link name="box_stair4_top">
+    <visual><origin xyz="0 8.5 0.185"/><geometry><box size="17.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 8.5 0.185"/><geometry><box size="17.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair4_top" type="fixed"><parent link="planeLink"/><child link="box_stair4_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair4_bottom">
+    <visual><origin xyz="0 -8.5 0.185"/><geometry><box size="17.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -8.5 0.185"/><geometry><box size="17.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair4_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair4_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair4_left">
+    <visual><origin xyz="-8.5 0 0.185"/><geometry><box size="0.3 17.0 0.03"/></geometry></visual>
+    <collision><origin xyz="-8.5 0 0.185"/><geometry><box size="0.3 17.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair4_left" type="fixed"><parent link="planeLink"/><child link="box_stair4_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair4_right">
+    <visual><origin xyz="8.5 0 0.185"/><geometry><box size="0.3 17.0 0.03"/></geometry></visual>
+    <collision><origin xyz="8.5 0 0.185"/><geometry><box size="0.3 17.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair4_right" type="fixed"><parent link="planeLink"/><child link="box_stair4_right"/><origin xyz="0 0 0"/></joint>
+
+  <!-- Step 2 (z=0.30, height=0.03) -->
+  <link name="box_stair5_top">
+    <visual><origin xyz="0 8.8 0.385"/><geometry><box size="17.6 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 8.8 0.385"/><geometry><box size="17.6 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair5_top" type="fixed"><parent link="planeLink"/><child link="box_stair5_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair5_bottom">
+    <visual><origin xyz="0 -8.8 0.385"/><geometry><box size="17.6 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -8.8 0.385"/><geometry><box size="17.6 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair5_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair5_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair5_left">
+    <visual><origin xyz="-8.8 0 0.385"/><geometry><box size="0.3 17.6 0.03"/></geometry></visual>
+    <collision><origin xyz="-8.8 0 0.385"/><geometry><box size="0.3 17.6 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair5_left" type="fixed"><parent link="planeLink"/><child link="box_stair5_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair5_right">
+    <visual><origin xyz="8.8 0 0.385"/><geometry><box size="0.3 17.6 0.03"/></geometry></visual>
+    <collision><origin xyz="8.8 0 0.385"/><geometry><box size="0.3 17.6 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair5_right" type="fixed"><parent link="planeLink"/><child link="box_stair5_right"/><origin xyz="0 0 0"/></joint>
+
+  <!-- Step 3 (z=0.50, height=0.03) -->
+  <link name="box_stair6_top">
+    <visual><origin xyz="0 9.1 0.585"/><geometry><box size="18.2 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 9.1 0.585"/><geometry><box size="18.2 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair6_top" type="fixed"><parent link="planeLink"/><child link="box_stair6_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair6_bottom">
+    <visual><origin xyz="0 -9.1 0.585"/><geometry><box size="18.2 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -9.1 0.585"/><geometry><box size="18.2 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair6_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair6_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair6_left">
+    <visual><origin xyz="-9.1 0 0.585"/><geometry><box size="0.3 18.2 0.03"/></geometry></visual>
+    <collision><origin xyz="-9.1 0 0.585"/><geometry><box size="0.3 18.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair6_left" type="fixed"><parent link="planeLink"/><child link="box_stair6_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair6_right">
+    <visual><origin xyz="9.1 0 0.585"/><geometry><box size="0.3 18.2 0.03"/></geometry></visual>
+    <collision><origin xyz="9.1 0 0.585"/><geometry><box size="0.3 18.2 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair6_right" type="fixed"><parent link="planeLink"/><child link="box_stair6_right"/><origin xyz="0 0 0"/></joint>
+
+
+  <!-- Highest frame (step 1, z=0.50) -->
+  <link name="box_stair_descend1_top">
+    <visual><origin xyz="0 9.4 0.585"/><geometry><box size="18.8 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 9.4 0.585"/><geometry><box size="18.8 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend1_top" type="fixed"><parent link="planeLink"/><child link="box_stair_descend1_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend1_bottom">
+    <visual><origin xyz="0 -9.4 0.585"/><geometry><box size="18.8 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -9.4 0.585"/><geometry><box size="18.8 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend1_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair_descend1_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend1_left">
+    <visual><origin xyz="-9.4 0 0.585"/><geometry><box size="0.3 18.8 0.03"/></geometry></visual>
+    <collision><origin xyz="-9.4 0 0.585"/><geometry><box size="0.3 18.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend1_left" type="fixed"><parent link="planeLink"/><child link="box_stair_descend1_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend1_right">
+    <visual><origin xyz="9.4 0 0.585"/><geometry><box size="0.3 18.8 0.03"/></geometry></visual>
+    <collision><origin xyz="9.4 0 0.585"/><geometry><box size="0.3 18.8 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend1_right" type="fixed"><parent link="planeLink"/><child link="box_stair_descend1_right"/><origin xyz="0 0 0"/></joint>
+
+  <!-- Middle frame (step 2, z=0.30) -->
+  <link name="box_stair_descend2_top">
+    <visual><origin xyz="0 9.7 0.385"/><geometry><box size="19.4 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 9.7 0.385"/><geometry><box size="19.4 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend2_top" type="fixed"><parent link="planeLink"/><child link="box_stair_descend2_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend2_bottom">
+    <visual><origin xyz="0 -9.7 0.385"/><geometry><box size="19.4 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -9.7 0.385"/><geometry><box size="19.4 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend2_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair_descend2_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend2_left">
+    <visual><origin xyz="-9.7 0 0.385"/><geometry><box size="0.3 19.4 0.03"/></geometry></visual>
+    <collision><origin xyz="-9.7 0 0.385"/><geometry><box size="0.3 19.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend2_left" type="fixed"><parent link="planeLink"/><child link="box_stair_descend2_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend2_right">
+    <visual><origin xyz="9.7 0 0.385"/><geometry><box size="0.3 19.4 0.03"/></geometry></visual>
+    <collision><origin xyz="9.7 0 0.385"/><geometry><box size="0.3 19.4 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend2_right" type="fixed"><parent link="planeLink"/><child link="box_stair_descend2_right"/><origin xyz="0 0 0"/></joint>
+
+  <!-- Lowest frame (step 3, z=0.185) -->
+  <link name="box_stair_descend3_top">
+    <visual><origin xyz="0 10.0 0.185"/><geometry><box size="20.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 10.0 0.185"/><geometry><box size="20.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend3_top" type="fixed"><parent link="planeLink"/><child link="box_stair_descend3_top"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend3_bottom">
+    <visual><origin xyz="0 -10.0 0.185"/><geometry><box size="20.0 0.3 0.03"/></geometry></visual>
+    <collision><origin xyz="0 -10.0 0.185"/><geometry><box size="20.0 0.3 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend3_bottom" type="fixed"><parent link="planeLink"/><child link="box_stair_descend3_bottom"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend3_left">
+    <visual><origin xyz="-10.0 0 0.185"/><geometry><box size="0.3 20.0 0.03"/></geometry></visual>
+    <collision><origin xyz="-10.0 0 0.185"/><geometry><box size="0.3 20.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend3_left" type="fixed"><parent link="planeLink"/><child link="box_stair_descend3_left"/><origin xyz="0 0 0"/></joint>
+
+  <link name="box_stair_descend3_right">
+    <visual><origin xyz="10.0 0 0.185"/><geometry><box size="0.3 20.0 0.03"/></geometry></visual>
+    <collision><origin xyz="10.0 0 0.185"/><geometry><box size="0.3 20.0 0.03"/></geometry></collision>
+  </link>
+  <joint name="box_stair_descend3_right" type="fixed"><parent link="planeLink"/><child link="box_stair_descend3_right"/><origin xyz="0 0 0"/></joint>
+
+
+
+
+</robot>

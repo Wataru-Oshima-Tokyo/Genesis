@@ -108,10 +108,11 @@ def parse_terrain(morph: Terrain, surface):
                     elif subterrain_type == "discrete_obstacles_terrain":
                         subterrain_height_field = isaacgym_terrain_utils.discrete_obstacles_terrain(
                             new_subterrain,
-                            max_height=0.05,
-                            min_size=1.0,
-                            max_size=5.0,
-                            num_rects=20,
+                            slope=-0.2,
+                            pit_size_m=0.2,
+                            pit_gap_m=0.4,
+                            pit_depth_m=0.2,
+                            platform_size_m=0.0, 
                         ).height_field_raw
 
                     elif subterrain_type == "wave_terrain":
@@ -129,7 +130,7 @@ def parse_terrain(morph: Terrain, surface):
                         ).height_field_raw
 
                     elif subterrain_type == "pyramid_stairs_terrain":
-                        step_height = random.uniform(0.15, 0.2)
+                        step_height = random.uniform(0.05, 0.1)
                         step_width = random.uniform(0.25, 0.3)
                         subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                             new_subterrain,
@@ -146,7 +147,7 @@ def parse_terrain(morph: Terrain, surface):
                         ).height_field_raw
                     elif subterrain_type == "pyramid_steep_down_stairs_terrain":
                         step_height = -0.2 
-                        step_width = 0.2
+                        step_width = 0.25
                         subterrain_height_field = isaacgym_terrain_utils.pyramid_stairs_terrain(
                             new_subterrain,
                             step_width= step_width,
@@ -161,16 +162,16 @@ def parse_terrain(morph: Terrain, surface):
                             platform_size=0.0,
                         ).height_field_raw
                     elif subterrain_type == "stamble_terrain":
-                        step_height_ = 0.05
                         subterrain_height_field = isaacgym_terrain_utils.stamble_terrain(
                             new_subterrain,
-                            step_height=step_height_,
+                            patch_size_m = 0.4,
+                            gap_m = 0.1
                         ).height_field_raw
                     elif subterrain_type == "blocky_terrain":
                         subterrain_height_field = isaacgym_terrain_utils.blocky_terrain(
                             new_subterrain,
-                            cube_size_m = 0.7,
-                            cube_height_m = 0.17
+                            patch_size_m = 0.7,
+                            gap_m = 0.2
                         ).height_field_raw
                     elif subterrain_type == "debug_terrain":
                         subterrain_height_field = isaacgym_terrain_utils.debug_terrain(
