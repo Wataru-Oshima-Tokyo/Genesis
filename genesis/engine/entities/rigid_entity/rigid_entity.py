@@ -339,7 +339,15 @@ class RigidEntity(Entity):
             try:
                 # Mujoco's unified MJCF+URDF parser for URDF files.
                 # Note that Mujoco URDF parser completely ignores equality constraints.
-                l_infos, links_j_infos, links_g_infos_mj, _ = mju.parse_xml(morph_, surface)
+                l_infos, links_j_infos_mj, links_g_infos_mj, _ = mju.parse_xml(morph_, surface)
+
+                # Mujoco is not parsing actuators properties
+                for j_info_gs in chain.from_iterable(links_j_infos):
+                    for j_info_mj in chain.from_iterable(links_j_infos_mj):
+                        if j_info_mj["name"] == j_info_gs["name"]:
+                            for name in ("dofs_force_range", "dofs_armature", "dofs_kp", "dofs_kv"):
+                                j_info_mj[name] = j_info_gs[name]
+                links_j_infos = links_j_infos_mj
 
                 # Take into account 'world' body if it was added automatically for our legacy URDF parser
                 if len(links_g_infos_mj) == len(links_g_infos) + 1:
@@ -372,11 +380,16 @@ class RigidEntity(Entity):
             and links_j_infos
             and sum(j_info["n_dofs"] for j_info in links_j_infos[0]) == 0
         ):
-            # Pick the depth fixed joint down the kinematic tree
-            for idx, (l_info, link_j_infos) in enumerate(zip(l_infos, links_j_infos)):
-                if l_info["parent_idx"] in (0, -1) and sum(j_info["n_dofs"] for j_info in link_j_infos) == 0:
+            # Select the second joint down the kinematic tree if possible without messing up with fixed links to keep
+            root_idx = 0
+            for idx, (l_info, link_j_infos) in tuple(enumerate(zip(l_infos, links_j_infos)))[:2]:
+                if (
+                    l_info["name"] not in morph.links_to_keep
+                    and l_info["parent_idx"] in (0, -1)
+                    and sum(j_info["n_dofs"] for j_info in link_j_infos) == 0
+                ):
+                    root_idx = idx
                     continue
-                idx -= 1
                 break
 
             # Define free joint
@@ -398,27 +411,61 @@ class RigidEntity(Entity):
             j_info["dofs_kp"] = np.zeros((6,), dtype=gs.np_float)
             j_info["dofs_kv"] = np.zeros((6,), dtype=gs.np_float)
             j_info["dofs_force_range"] = np.tile([-np.inf, np.inf], (6, 1))
-            links_j_infos[idx] = [j_info]
+            links_j_infos[root_idx] = [j_info]
+
+            # Rename root link for clarity if relevant
+            if root_idx == 0:
+                l_infos[root_idx]["name"] = "base"
+
+            # Shift root idx for all child links and replace root if no longer fixed wrt world
+            for i_l in range(root_idx, len(l_infos)):
+                l_info = l_infos[i_l]
+                if "root_idx" in l_info and l_info["root_idx"] in (root_idx + 1, i_l):
+                    l_info["root_idx"] = root_idx
 
             # Must invalidate invweight for all child links and joints because the root joint was fixed when it was
             # initially computed. Re-initialize it to some strictly negative value to trigger recomputation in solver.
-            for i_l in range(idx, len(l_infos)):
+            for i_l in range(root_idx, len(l_infos)):
                 l_infos[i_l]["invweight"] = np.full((2,), fill_value=-1.0)
                 for j_info in links_j_infos[i_l]:
                     j_info["dofs_invweight"] = np.full((2,), fill_value=-1.0)
 
-        # Remove the world link if "unless", i.e. free or fixed joint without any geometry attached
-        if not isinstance(morph, gs.morphs.URDF) or morph.merge_fixed_links:
-            if not links_g_infos[0] and sum(j_info["n_dofs"] for j_info in links_j_infos[0]) == 0:
-                del l_infos[0], links_j_infos[0], links_g_infos[0]
-                for l_info in l_infos:
-                    l_info["parent_idx"] = max(l_info["parent_idx"] - 1, -1)
-                    if "root_idx" in l_info:
-                        l_info["root_idx"] = max(l_info["root_idx"] - 1, -1)
+        # Remove the world link if "useless", i.e. free or fixed joint without any geometry attached
+        if not links_g_infos[0] and sum(j_info["n_dofs"] for j_info in links_j_infos[0]) == 0:
+            del l_infos[0], links_j_infos[0], links_g_infos[0]
+            for l_info in l_infos:
+                l_info["parent_idx"] = max(l_info["parent_idx"] - 1, -1)
+                if "root_idx" in l_info:
+                    l_info["root_idx"] = max(l_info["root_idx"] - 1, -1)
+
+        # Genesis requires links associated with free joints to be attached to the world directly
+        for l_info, link_j_infos in zip(l_infos, links_j_infos):
+            if all(j_info["type"] == gs.JOINT_TYPE.FREE for j_info in link_j_infos):
+                l_info["parent_idx"] = -1
+
+        # Force recomputing inertial information based on geometry if ill-defined for some reason
+        is_inertia_invalid = False
+        for l_info, link_j_infos in zip(l_infos, links_j_infos):
+            if not all(j_info["type"] == gs.JOINT_TYPE.FIXED for j_info in link_j_infos) and (
+                (l_info.get("inertial_mass") is None or l_info["inertial_mass"] <= 0.0)
+                or (l_info.get("inertial_i") is None or np.diag(l_info["inertial_i"]) <= 0.0).any()
+            ):
+                if l_info.get("inertial_mass") is not None or l_info.get("inertial_i") is not None:
+                    gs.logger.debug(
+                        f"Invalid or undefined inertia for link '{l_info['name']}'. Force recomputing it based on geometry."
+                    )
+                l_info["inertial_i"] = None
+                l_info["inertial_mass"] = None
+                is_inertia_invalid = True
+        if is_inertia_invalid:
+            for l_info, link_j_infos in zip(l_infos, links_j_infos):
+                l_info["invweight"] = np.full((2,), fill_value=-1.0)
+                for j_info in link_j_infos:
+                    j_info["dofs_invweight"] = np.full((2,), fill_value=-1.0)
 
         # Define a flag that determines whether the link at hand is associated with a robot.
         # Note that 0d array is used rather than native type because this algo requires mutable objects.
-        for i, (l_info, link_j_infos) in enumerate(zip(l_infos, links_j_infos)):
+        for l_info, link_j_infos in zip(l_infos, links_j_infos):
             if not link_j_infos or all(j_info["type"] == gs.JOINT_TYPE.FIXED for j_info in link_j_infos):
                 if l_info["parent_idx"] >= 0:
                     l_info["is_robot"] = l_infos[l_info["parent_idx"]]["is_robot"]
@@ -1277,10 +1324,11 @@ class RigidEntity(Entity):
                         )  # NOTE: we still compute jacobian for all dofs as we haven't found a clean way to implement this
 
                         # copy to multi-link jacobian (only for the effective n_dofs instead of self.n_dofs)
-                        for i_error, i_dof in ti.ndrange(6, n_dofs):
-                            i_row = i_ee * 6 + i_error
-                            i_dof_ = dofs_idx[i_dof]
-                            self._IK_jacobian[i_row, i_dof, i_b] = self._jacobian[i_error, i_dof_, i_b]
+                        for i_dof in range(n_dofs):
+                            for i_error in ti.static(range(6)):
+                                i_row = i_ee * 6 + i_error
+                                i_dof_ = dofs_idx[i_dof]
+                                self._IK_jacobian[i_row, i_dof, i_b] = self._jacobian[i_error, i_dof_, i_b]
 
                     # compute dq = jac.T @ inverse(jac @ jac.T + diag) @ error (only for the effective n_dofs instead of self.n_dofs)
                     lu.mat_transpose(self._IK_jacobian, self._IK_jacobian_T, n_error_dims, n_dofs, i_b)
@@ -1353,6 +1401,7 @@ class RigidEntity(Entity):
                         self._IK_qpos_best[i_q, i_b] = self._solver.qpos[i_q + self._q_start, i_b]
                     for i_error in range(n_error_dims):
                         self._IK_err_pose_best[i_error, i_b] = self._IK_err_pose[i_error, i_b]
+                    break
 
                 else:
                     # copy to _IK_qpos if this sample is better
@@ -1944,9 +1993,10 @@ class RigidEntity(Entity):
         return self._solver.get_links_ang(links_idx, envs_idx, unsafe=unsafe)
 
     @gs.assert_built
-    def get_links_acc(self, links_idx_local=None, envs_idx=None, *, unsafe=False):
+    def get_links_accelerometer_data(self, links_idx_local=None, envs_idx=None, *, imu=False, unsafe=False):
         """
-        Returns linear acceleration of the specified entity's links. (Mimicking accelerometer)
+        Returns the accelerometer data that would be measured by a IMU rigidly attached to the specified entity's links,
+        i.e. the true linear acceleration of the links expressed at their respective origin in local frame coordinates.
 
         Parameters
         ----------
@@ -1958,10 +2008,52 @@ class RigidEntity(Entity):
         Returns
         -------
         acc : torch.Tensor, shape (n_links, 3) or (n_envs, n_links, 3)
-            The linear acceleration of the specified entity's links.
+            The accelerometer data of IMUs rigidly attached of the specified entity's links.
         """
         links_idx = self._get_idx(links_idx_local, self.n_links, self._link_start, unsafe=True)
-        return self._solver.get_links_acc(links_idx, envs_idx, unsafe=unsafe)
+        return self._solver.get_links_acc(links_idx, envs_idx, mimick_imu=True, unsafe=unsafe)
+
+    @gs.assert_built
+    def get_links_acc(self, links_idx_local=None, envs_idx=None, *, unsafe=False):
+        """
+        Returns true linear acceleration (aka. "classical acceleration") of the specified entity's links expressed at
+        their respective origin in world coordinates.
+
+        Parameters
+        ----------
+        links_idx_local : None | array_like
+            The indices of the links. Defaults to None.
+        envs_idx : None | array_like, optional
+            The indices of the environments. If None, all environments will be considered. Defaults to None.
+
+        Returns
+        -------
+        acc : torch.Tensor, shape (n_links, 3) or (n_envs, n_links, 3)
+            The linear classical acceleration of the specified entity's links.
+        """
+        links_idx = self._get_idx(links_idx_local, self.n_links, self._link_start, unsafe=True)
+        return self._solver.get_links_acc(links_idx, envs_idx, mimick_imu=False, unsafe=unsafe)
+
+    @gs.assert_built
+    def get_links_acc_ang(self, links_idx_local=None, envs_idx=None, *, unsafe=False):
+        """
+        Returns angular acceleration of the specified entity's links expressed at their respective origin in world
+        coordinates.
+
+        Parameters
+        ----------
+        links_idx_local : None | array_like
+            The indices of the links. Defaults to None.
+        envs_idx : None | array_like, optional
+            The indices of the environments. If None, all environments will be considered. Defaults to None.
+
+        Returns
+        -------
+        acc : torch.Tensor, shape (n_links, 3) or (n_envs, n_links, 3)
+            The linear classical acceleration of the specified entity's links.
+        """
+        links_idx = self._get_idx(links_idx_local, self.n_links, self._link_start, unsafe=True)
+        return self._solver.get_links_acc_ang(links_idx, envs_idx, unsafe=unsafe)
 
     @gs.assert_built
     def get_links_inertial_mass(self, links_idx_local=None, envs_idx=None, *, unsafe=False):
@@ -1974,7 +2066,7 @@ class RigidEntity(Entity):
         return self._solver.get_links_invweight(links_idx, envs_idx, unsafe=unsafe)
 
     @gs.assert_built
-    def set_pos(self, pos, envs_idx=None, *, zero_velocity=True, unsafe=False):
+    def set_pos(self, pos, envs_idx=None, *, relative=False, zero_velocity=True, unsafe=False):
         """
         Set position of the entity's base link.
 
@@ -1982,8 +2074,12 @@ class RigidEntity(Entity):
         ----------
         pos : array_like
             The position to set.
+        relative : bool, optional
+            Whether the position to set is absolute or relative to the initial (not current!) position. Defaults to
+            False.
         zero_velocity : bool, optional
-            Whether to zero the velocity of all the entity's dofs. Defaults to True. This is a safety measure after a sudden change in entity pose.
+            Whether to zero the velocity of all the entity's dofs. Defaults to True. This is a safety measure after a
+            sudden change in entity pose.
         envs_idx : None | array_like, optional
             The indices of the environments. If None, all environments will be considered. Defaults to None.
         """
@@ -1993,13 +2089,18 @@ class RigidEntity(Entity):
                 gs.logger.debug(ALLOCATE_TENSOR_WARNING)
             pos = _pos
         self._solver.set_base_links_pos(
-            pos.unsqueeze(-2), self._base_links_idx, envs_idx, unsafe=unsafe, skip_forward=zero_velocity
+            pos.unsqueeze(-2),
+            self._base_links_idx,
+            envs_idx,
+            relative=relative,
+            unsafe=unsafe,
+            skip_forward=zero_velocity,
         )
         if zero_velocity:
             self.zero_all_dofs_velocity(envs_idx, unsafe=unsafe)
 
     @gs.assert_built
-    def set_quat(self, quat, envs_idx=None, *, zero_velocity=True, unsafe=False):
+    def set_quat(self, quat, envs_idx=None, *, relative=False, zero_velocity=True, unsafe=False):
         """
         Set quaternion of the entity's base link.
 
@@ -2007,8 +2108,12 @@ class RigidEntity(Entity):
         ----------
         quat : array_like
             The quaternion to set.
+        relative : bool, optional
+            Whether the quaternion to set is absolute or relative to the initial (not current!) quaternion. Defaults to
+            False.
         zero_velocity : bool, optional
-            Whether to zero the velocity of all the entity's dofs. Defaults to True. This is a safety measure after a sudden change in entity pose.
+            Whether to zero the velocity of all the entity's dofs. Defaults to True. This is a safety measure after a
+            sudden change in entity pose.
         envs_idx : None | array_like, optional
             The indices of the environments. If None, all environments will be considered. Defaults to None.
         """
@@ -2018,7 +2123,12 @@ class RigidEntity(Entity):
                 gs.logger.debug(ALLOCATE_TENSOR_WARNING)
             quat = _quat
         self._solver.set_base_links_quat(
-            quat.unsqueeze(-2), self._base_links_idx, envs_idx, unsafe=unsafe, skip_forward=zero_velocity
+            quat.unsqueeze(-2),
+            self._base_links_idx,
+            envs_idx,
+            relative=relative,
+            unsafe=unsafe,
+            skip_forward=zero_velocity,
         )
         if zero_velocity:
             self.zero_all_dofs_velocity(envs_idx, unsafe=unsafe)
@@ -2102,7 +2212,10 @@ class RigidEntity(Entity):
         elif isinstance(idx_local, int):
             idx_global = idx_local + idx_global_start
         elif isinstance(idx_local, (list, tuple)):
-            idx_global = [i + idx_global_start for i in idx_local]
+            try:
+                idx_global = [i + idx_global_start for i in idx_local]
+            except TypeError:
+                gs.raise_exception("Expecting a sequence of integers for `idx_local`.")
         else:
             # Increment may be slow when dealing with heterogenuous data, so it must be avoided if possible
             if idx_global_start > 0:
@@ -2561,94 +2674,87 @@ class RigidEntity(Entity):
         return collision_pairs
 
     @gs.assert_built
-    def get_contacts(self, with_entity=None):
+    def get_contacts(self, with_entity=None, exclude_self_contact=False):
         """
         Returns contact information computed during the most recent `scene.step()`.
-        If `with_entity` is provided, only returns contact information involving the caller entity and the specified `with_entity`. Otherwise, returns all contact information involving the caller entity.
+        If `with_entity` is provided, only returns contact information involving the caller and the specified entity.
+        Otherwise, returns all contact information involving the caller entity.
+        When `with_entity` is `self`, it will return the self-collision only.
 
         The returned dict contains the following keys (a contact pair consists of two geoms: A and B):
 
-        - 'geom_a'     : The global geom index of geom A in the contact pair. (actual geom object can be obtained by scene.rigid_solver.geoms[geom_a])
-        - 'geom_b'     : The global geom index of geom B in the contact pair. (actual geom object can be obtained by scene.rigid_solver.geoms[geom_b])
-        - 'link_a'     : The global link index of link A (that contains geom A) in the contact pair. (actual link object can be obtained by scene.rigid_solver.links[link_a])
-        - 'link_b'     : The global link index of link B (that contains geom B) in the contact pair. (actual link object can be obtained by scene.rigid_solver.links[link_b])
+        - 'geom_a'     : The global geom index of geom A in the contact pair.
+                        (actual geom object can be obtained by scene.rigid_solver.geoms[geom_a])
+        - 'geom_b'     : The global geom index of geom B in the contact pair.
+                        (actual geom object can be obtained by scene.rigid_solver.geoms[geom_b])
+        - 'link_a'     : The global link index of link A (that contains geom A) in the contact pair.
+                        (actual link object can be obtained by scene.rigid_solver.links[link_a])
+        - 'link_b'     : The global link index of link B (that contains geom B) in the contact pair.
+                        (actual link object can be obtained by scene.rigid_solver.links[link_b])
         - 'position'   : The contact position in world frame.
         - 'force_a'    : The contact force applied to geom A.
         - 'force_b'    : The contact force applied to geom B.
-        - 'valid_mask' : (Only when scene is parallelized) A boolean mask indicating whether the contact information is valid.
+        - 'valid_mask' : A boolean mask indicating whether the contact information is valid.
+                        (Only when scene is parallelized)
 
-        The shape of each entry is (n_envs, n_contacts, ...) for scene with parallel envs, and (n_contacts, ...) for non-parallelized scene.
+        The shape of each entry is (n_envs, n_contacts, ...) for scene with parallel envs
+                               and (n_contacts, ...) for non-parallelized scene.
 
         Parameters
         ----------
         with_entity : RigidEntity, optional
             The entity to check contact with. Defaults to None.
+        exclude_self_contact: bool
+            Exclude the self collision from the returning contacts. Defaults to False.
 
         Returns
         -------
         contact_info : dict
             The contact information.
         """
+        contacts_info = self._solver.collider.get_contacts(as_tensor=True, to_torch=True)
 
-        scene_contact_info = self._solver.collider.contact_data.to_torch(gs.device)
-        n_contacts = self._solver.collider.n_contacts.to_torch(gs.device)
+        logical_operation = torch.logical_xor if exclude_self_contact else torch.logical_or
+        if with_entity is not None and self.idx == with_entity.idx:
+            if exclude_self_contact:
+                gs.raise_exception("`with_entity` is self but `exclude_self_contact` is True.")
+            logical_operation = torch.logical_and
 
-        valid_mask = torch.logical_or(
+        valid_mask = logical_operation(
             torch.logical_and(
-                scene_contact_info["geom_a"] >= self.geom_start,
-                scene_contact_info["geom_a"] < self.geom_end,
+                contacts_info["geom_a"] >= self.geom_start,
+                contacts_info["geom_a"] < self.geom_end,
             ),
             torch.logical_and(
-                scene_contact_info["geom_b"] >= self.geom_start,
-                scene_contact_info["geom_b"] < self.geom_end,
+                contacts_info["geom_b"] >= self.geom_start,
+                contacts_info["geom_b"] < self.geom_end,
             ),
         )
-        if with_entity is not None:
-            if self.idx == with_entity.idx:
-                gs.raise_exception("`with_entity` cannot be the same as the caller entity.")
+        if with_entity is not None and self.idx != with_entity.idx:
             valid_mask = torch.logical_and(
                 valid_mask,
                 torch.logical_or(
                     torch.logical_and(
-                        scene_contact_info["geom_a"] >= with_entity.geom_start,
-                        scene_contact_info["geom_a"] < with_entity.geom_end,
+                        contacts_info["geom_a"] >= with_entity.geom_start,
+                        contacts_info["geom_a"] < with_entity.geom_end,
                     ),
                     torch.logical_and(
-                        scene_contact_info["geom_b"] >= with_entity.geom_start,
-                        scene_contact_info["geom_b"] < with_entity.geom_end,
+                        contacts_info["geom_b"] >= with_entity.geom_start,
+                        contacts_info["geom_b"] < with_entity.geom_end,
                     ),
                 ),
             )
 
-        # Create an index tensor for contacts and compare against per-env n_contacts.
-        # Assumes valid_mask.shape[0] corresponds to the maximum number of contacts.
-        contact_indices = torch.arange(valid_mask.shape[0], device=valid_mask.device).unsqueeze(1)
-        valid_mask = torch.logical_and(valid_mask, contact_indices < n_contacts)
-
         if self._solver.n_envs == 0:
-            valid_idx = torch.nonzero(valid_mask.squeeze(), as_tuple=True)[0]
-            contact_info = {
-                "geom_a": scene_contact_info["geom_a"][valid_idx, 0],
-                "geom_b": scene_contact_info["geom_b"][valid_idx, 0],
-                "link_a": scene_contact_info["link_a"][valid_idx, 0],
-                "link_b": scene_contact_info["link_b"][valid_idx, 0],
-                "position": scene_contact_info["pos"][valid_idx, 0],
-                "force_a": -scene_contact_info["force"][valid_idx, 0],
-                "force_b": scene_contact_info["force"][valid_idx, 0],
-            }
+            contacts_info = {key: value[valid_mask] for key, value in contacts_info.items()}
         else:
-            max_env_collisions = int(torch.max(n_contacts).item())
-            contact_info = {
-                "geom_a": scene_contact_info["geom_a"][:max_env_collisions].t(),
-                "geom_b": scene_contact_info["geom_b"][:max_env_collisions].t(),
-                "link_a": scene_contact_info["link_a"][:max_env_collisions].t(),
-                "link_b": scene_contact_info["link_b"][:max_env_collisions].t(),
-                "position": scene_contact_info["pos"][:max_env_collisions].transpose(1, 0),
-                "force_a": -scene_contact_info["force"][:max_env_collisions].transpose(1, 0),
-                "force_b": scene_contact_info["force"][:max_env_collisions].transpose(1, 0),
-                "valid_mask": valid_mask[:max_env_collisions].t(),
-            }
-        return contact_info
+            contacts_info["valid_mask"] = valid_mask
+
+        contacts_info["force_a"] = -contacts_info["force"]
+        contacts_info["force_b"] = +contacts_info["force"]
+        del contacts_info["force"]
+
+        return contacts_info
 
     def get_links_net_contact_force(self, envs_idx=None, *, unsafe=False):
         """

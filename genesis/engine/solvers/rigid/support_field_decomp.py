@@ -148,3 +148,148 @@ class SupportField:
                 vid = _vid
 
         return v, vid
+
+    @ti.func
+    def _func_support_sphere(self, d, i_g, i_b, shrink):
+        sphere_center = self.solver.geoms_state[i_g, i_b].pos
+        sphere_radius = self.solver.geoms_info[i_g].data[0]
+
+        # Shrink the sphere to a point
+        res = sphere_center
+        if not shrink:
+            res += d * sphere_radius
+        return res
+
+    @ti.func
+    def _func_support_ellipsoid(self, d, i_g, i_b):
+        g_state = self.solver.geoms_state[i_g, i_b]
+        ellipsoid_center = g_state.pos
+        ellipsoid_scaled_axis = ti.Vector(
+            [
+                self.solver.geoms_info[i_g].data[0] ** 2,
+                self.solver.geoms_info[i_g].data[1] ** 2,
+                self.solver.geoms_info[i_g].data[2] ** 2,
+            ],
+            dt=gs.ti_float,
+        )
+        ellipsoid_scaled_axis = gu.ti_transform_by_quat(ellipsoid_scaled_axis, g_state.quat)
+        dist = ellipsoid_scaled_axis / ti.sqrt(d.dot(1.0 / ellipsoid_scaled_axis))
+        return ellipsoid_center + d * dist
+
+    @ti.func
+    def _func_support_capsule(self, d, i_g, i_b, shrink):
+        res = gs.ti_vec3(0, 0, 0)
+        g_state = self.solver.geoms_state[i_g, i_b]
+        capsule_center = g_state.pos
+        capsule_radius = self.solver.geoms_info[i_g].data[0]
+        capsule_halflength = 0.5 * self.solver.geoms_info[i_g].data[1]
+
+        if shrink:
+            local_dir = gu.ti_transform_by_quat(d, gu.ti_inv_quat(g_state.quat))
+            res[2] = capsule_halflength if local_dir[2] >= 0.0 else -capsule_halflength
+            res = gu.ti_transform_by_trans_quat(res, capsule_center, g_state.quat)
+        else:
+            capsule_axis = gu.ti_transform_by_quat(ti.Vector([0.0, 0.0, 1.0], dt=gs.ti_float), g_state.quat)
+            capsule_endpoint_side = -1.0 if d.dot(capsule_axis) < 0.0 else 1.0
+            capsule_endpoint = capsule_center + capsule_halflength * capsule_endpoint_side * capsule_axis
+            res = capsule_endpoint + d * capsule_radius
+        return res
+
+    @ti.func
+    def _func_support_prism(self, d, i_g, i_b):
+        istart = 3
+        if d[2] < 0:
+            istart = 0
+
+        ibest = istart
+        best = self.solver.collider.prism[istart, i_b].dot(d)
+        for i in range(istart + 1, istart + 3):
+            dot = self.solver.collider.prism[i, i_b].dot(d)
+            if dot > best:
+                ibest = i
+                best = dot
+
+        return self.solver.collider.prism[ibest, i_b], ibest
+
+    @ti.func
+    def _func_support_box(self, d, i_g, i_b):
+        g_state = self.solver.geoms_state[i_g, i_b]
+        d_box = gu.ti_inv_transform_by_quat(d, g_state.quat)
+
+        v_ = ti.Vector(
+            [
+                (-1.0 if d_box[0] < 0.0 else 1.0) * self.solver.geoms_info[i_g].data[0] * 0.5,
+                (-1.0 if d_box[1] < 0.0 else 1.0) * self.solver.geoms_info[i_g].data[1] * 0.5,
+                (-1.0 if d_box[2] < 0.0 else 1.0) * self.solver.geoms_info[i_g].data[2] * 0.5,
+            ],
+            dt=gs.ti_float,
+        )
+        vid = (v_[0] > 0.0) * 1 + (v_[1] > 0.0) * 2 + (v_[2] > 0.0) * 4
+        vid += self.solver.geoms_info[i_g].vert_start
+        v = gu.ti_transform_by_trans_quat(v_, g_state.pos, g_state.quat)
+        return v, vid
+
+    @ti.func
+    def _func_count_supports_world(self, d, i_g, i_b):
+        """
+        Count the number of valid support points for the given world direction.
+        """
+        g_state = self.solver.geoms_state[i_g, i_b]
+        d_mesh = gu.ti_transform_by_quat(d, gu.ti_inv_quat(g_state.quat))
+        return self._func_count_supports_mesh(d_mesh, i_g)
+
+    @ti.func
+    def _func_count_supports_mesh(self, d_mesh, i_g):
+        """
+        Count the number of valid support points for a mesh in the given direction.
+        """
+        theta = ti.atan2(d_mesh[1], d_mesh[0])  # [-pi, pi]
+        phi = ti.acos(d_mesh[2])  # [0, pi]
+
+        support_res = gs.ti_int(self.support_res)
+        dot_max = gs.ti_float(-1e20)
+
+        ii = (theta + pi) / pi / 2 * support_res
+        jj = phi / pi * support_res
+
+        count = gs.ti_int(0)
+        for i4 in range(4):
+            i, j = gs.ti_int(0), gs.ti_int(0)
+            if i4 % 2:
+                i = gs.ti_int(ti.math.ceil(ii) % support_res)
+            else:
+                i = gs.ti_int(ti.math.floor(ii) % support_res)
+
+            if i4 // 2 > 0:
+                j = gs.ti_int(ti.math.clamp(ti.math.ceil(jj), 0, support_res - 1))
+                if j == support_res - 1:
+                    j = support_res - 2
+            else:
+                j = gs.ti_int(ti.math.clamp(ti.math.floor(jj), 0, support_res - 1))
+                if j == 0:
+                    j = 1
+
+            support_idx = gs.ti_int(self.support_cell_start[i_g] + i * support_res + j)
+            _vid = self.support_vid[support_idx]
+            pos = self.support_v[support_idx]
+            dot = pos.dot(d_mesh)
+
+            if dot > dot_max:
+                count = 1
+            elif dot == dot_max:
+                count += 1
+
+        return count
+
+    @ti.func
+    def _func_count_supports_box(self, d, i_g, i_b):
+        """
+        Count the number of valid support points for a box in the given direction.
+
+        If the direction has 1 zero component, there are 2 possible support points. If the direction has 2 zero
+        components, there are 4 possible support points.
+        """
+        g_state = self.solver.geoms_state[i_g, i_b]
+        d_box = gu.ti_inv_transform_by_quat(d, g_state.quat)
+
+        return 2 ** (d_box == 0.0).cast(gs.ti_int).sum()

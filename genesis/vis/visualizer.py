@@ -32,6 +32,7 @@ class Visualizer(RBC):
         self._viewer = None
         self._rasterizer = None
         self._raytracer = None
+        self.viewer_lock = None  # check if null to know if the Visualizer has been built
 
         # Rasterizer context is shared by viewer and rasterizer
         try:
@@ -123,15 +124,11 @@ class Visualizer(RBC):
 
         self._context.reset()
 
-        # temp fix for cam.render() segfault
+        # Need to update viewer once here, because otherwise camera will update scene if render is called right after
+        # build, which will lead to segfault.
         if self._viewer is not None:
-            # need to update viewer once here, because otherwise camera will update scene if render is called right
-            # after build, which will lead to segfault.
-            # TODO: this slows down visualizer.update(). Needs to remove this once the bug is fixed.
-            try:
+            if self._viewer.is_alive():
                 self._viewer.update(auto_refresh=True)
-            except:
-                pass
 
         if self._raytracer is not None:
             self._raytracer.reset()

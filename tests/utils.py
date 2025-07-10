@@ -1,22 +1,28 @@
 import platform
 import os
 import subprocess
+import time
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
 from itertools import chain
+from pathlib import Path
 from typing import Literal, Sequence
 
 import cpuinfo
 import numpy as np
 import mujoco
 import torch
+from huggingface_hub import snapshot_download
+from requests.exceptions import HTTPError
 
 import genesis as gs
 import genesis.utils.geom as gu
 from genesis.utils import mjcf as mju
 from genesis.utils.mesh import get_assets_dir
+from genesis.utils.misc import tensor_to_array
 
 
 REPOSITY_URL = "Genesis-Embodied-AI/Genesis"
@@ -158,7 +164,50 @@ def get_git_commit_info(ref="HEAD"):
     return revision, timestamp
 
 
-def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None):
+def get_hf_assets(pattern, num_retry: int = 4, retry_delay: float = 30.0, check: bool = True):
+    assert num_retry >= 1
+
+    for _ in range(num_retry):
+        num_trials = 0
+        try:
+            # Try downloading the assets
+            asset_path = snapshot_download(
+                repo_type="dataset",
+                repo_id="Genesis-Intelligence/assets",
+                allow_patterns=pattern,
+                max_workers=1,
+            )
+
+            # Make sure that download was successful
+            has_files = False
+            for path in Path(asset_path).rglob(pattern):
+                if not path.is_file():
+                    continue
+                has_files = True
+
+                if path.stat().st_size == 0:
+                    raise HTTPError(f"File '{path}' is empty.")
+
+                if path.suffix.lower() in (".xml", ".urdf"):
+                    try:
+                        ET.parse(path)
+                    except ET.ParseError as e:
+                        raise HTTPError(f"Impossible to parse XML file.") from e
+            if not has_files:
+                raise HTTPError("No file downloaded.")
+        except HTTPError:
+            num_trials += 1
+            if num_trials == num_retry:
+                raise
+            print(f"Failed to download assets from HuggingFace dataset. Trying again in {retry_delay}s...")
+            time.sleep(retry_delay)
+        else:
+            break
+
+    return asset_path
+
+
+def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None, err_msg=None):
     assert (tol is not None) ^ (atol is not None or rtol is not None)
     if tol is not None:
         atol = tol
@@ -167,7 +216,22 @@ def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None):
         rtol = 0.0
     if atol is None:
         atol = 0.0
-    np.testing.assert_allclose(actual, desired, atol=atol, rtol=rtol)
+
+    if isinstance(actual, torch.Tensor):
+        actual = tensor_to_array(actual)
+    actual = np.asanyarray(actual)
+    if isinstance(desired, torch.Tensor):
+        desired = tensor_to_array(desired)
+    desired = np.asanyarray(desired)
+
+    if all(e.size == 0 for e in (actual, desired)):
+        return
+
+    np.testing.assert_allclose(actual, desired, atol=atol, rtol=rtol, err_msg=err_msg)
+
+
+def assert_array_equal(actual, desired, *, err_msg=None):
+    np.testing.assert_array_equal(actual, desired, err_msg=err_msg)
 
 
 def init_simulators(gs_sim, mj_sim=None, qpos=None, qvel=None):
@@ -185,6 +249,8 @@ def init_simulators(gs_sim, mj_sim=None, qpos=None, qvel=None):
     gs_sim.rigid_solver.dofs_state.qf_constraint.fill(0.0)
     gs_sim.rigid_solver._kernel_forward_dynamics()
     gs_sim.rigid_solver._func_constraint_force()
+    gs_sim.rigid_solver._kernel_update_acc()
+
     if gs_sim.scene.visualizer:
         gs_sim.scene.visualizer.update()
 
@@ -362,7 +428,9 @@ def _get_model_mappings(
     return gs_maps, mj_maps
 
 
-def build_mujoco_sim(xml_path, gs_solver, gs_integrator, multi_contact, adjacent_collision, dof_damping):
+def build_mujoco_sim(
+    xml_path, gs_solver, gs_integrator, merge_fixed_links, multi_contact, adjacent_collision, dof_damping, native_ccd
+):
     if gs_solver == gs.constraint_solver.CG:
         mj_solver = mujoco.mjtSolver.mjSOL_CG
     elif gs_solver == gs.constraint_solver.Newton:
@@ -377,7 +445,9 @@ def build_mujoco_sim(xml_path, gs_solver, gs_integrator, multi_contact, adjacent
         raise ValueError(f"Integrator '{gs_integrator}' not supported")
 
     xml_path = os.path.join(get_assets_dir(), xml_path)
-    model = mju.build_model(xml_path, discard_visual=True, merge_fixed_links=True, links_to_keep=())
+    model = mju.build_model(
+        xml_path, discard_visual=True, default_armature=None, merge_fixed_links=merge_fixed_links, links_to_keep=()
+    )
 
     model.opt.solver = mj_solver
     model.opt.integrator = mj_integrator
@@ -385,7 +455,10 @@ def build_mujoco_sim(xml_path, gs_solver, gs_integrator, multi_contact, adjacent
     model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_EULERDAMP)
     model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_REFSAFE)
     model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_GRAVITY)
-    model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_NATIVECCD
+    if native_ccd:
+        model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_NATIVECCD)
+    else:
+        model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_NATIVECCD
     if multi_contact:
         model.opt.enableflags |= mujoco.mjtEnableBit.mjENBL_MULTICCD
     else:
@@ -400,7 +473,16 @@ def build_mujoco_sim(xml_path, gs_solver, gs_integrator, multi_contact, adjacent
 
 
 def build_genesis_sim(
-    xml_path, gs_solver, gs_integrator, multi_contact, mujoco_compatibility, adjacent_collision, show_viewer, mj_sim
+    xml_path,
+    gs_solver,
+    gs_integrator,
+    merge_fixed_links,
+    multi_contact,
+    mujoco_compatibility,
+    adjacent_collision,
+    gjk_collision,
+    show_viewer,
+    mj_sim,
 ):
     scene = gs.Scene(
         viewer_options=gs.options.ViewerOptions(
@@ -427,6 +509,7 @@ def build_genesis_sim(
             tolerance=mj_sim.model.opt.tolerance,
             ls_iterations=mj_sim.model.opt.ls_iterations,
             ls_tolerance=mj_sim.model.opt.ls_tolerance,
+            use_gjk_collision=gjk_collision,
         ),
         show_viewer=show_viewer,
         show_FPS=False,
@@ -436,13 +519,14 @@ def build_genesis_sim(
         file=xml_path,
         convexify=True,
         decompose_robot_error_threshold=float("inf"),
+        default_armature=None,
     )
     if xml_path.endswith(".xml"):
         morph = gs.morphs.MJCF(**morph_kwargs)
     else:
         morph = gs.morphs.URDF(
             fixed=True,
-            merge_fixed_links=True,
+            merge_fixed_links=merge_fixed_links,
             links_to_keep=(),
             **morph_kwargs,
         )
@@ -493,12 +577,15 @@ def check_mujoco_model_consistency(
     assert not (mj_sim.model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_EULERDAMP)
     assert not (mj_sim.model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_REFSAFE)
     assert not (mj_sim.model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_GRAVITY)
-    assert mj_sim.model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_NATIVECCD
     assert not (mj_sim.model.opt.enableflags & mujoco.mjtEnableBit.mjENBL_FWDINV)
 
     mj_adj_collision = bool(mj_sim.model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_FILTERPARENT)
     gs_adj_collision = gs_sim.rigid_solver._options.enable_adjacent_collision
     assert gs_adj_collision == mj_adj_collision
+
+    gs_use_gjk_collision = gs_sim.rigid_solver._options.use_gjk_collision
+    mj_use_gjk_collision = not (mj_sim.model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_NATIVECCD)
+    assert gs_use_gjk_collision == mj_use_gjk_collision
 
     mj_solver = mujoco.mjtSolver(mj_sim.model.opt.solver)
     if mj_solver.name == "mjSOL_PGS":
@@ -664,6 +751,7 @@ def check_mujoco_data_consistency(
     mj_meaninertia = mj_sim.model.stat.meaninertia
     assert_allclose(gs_meaninertia, mj_meaninertia, tol=tol)
 
+    # Pre-constraint so-called bias forces in configuration space
     gs_qfrc_bias = gs_sim.rigid_solver.dofs_state.qf_bias.to_numpy()[:, 0]
     mj_qfrc_bias = mj_sim.data.qfrc_bias
     assert_allclose(gs_qfrc_bias, mj_qfrc_bias[mj_dofs_idx], tol=tol)
@@ -684,8 +772,18 @@ def check_mujoco_data_consistency(
     if gs_n_constraints:
         gs_contact_pos = gs_sim.rigid_solver.collider.contact_data.pos.to_numpy()[:gs_n_contacts, 0]
         mj_contact_pos = mj_sim.data.contact.pos
-        gs_sidx = np.argsort(gs_contact_pos[:, 0])
-        mj_sidx = np.argsort(mj_contact_pos[:, 0])
+        # Sort based on the axis with the largest variation
+        max_var_axis = 0
+        if gs_n_contacts > 1:
+            max_var = -1
+            for axis in range(3):
+                sorted_contact_pos = np.sort(mj_contact_pos[:, axis])
+                var = np.min(sorted_contact_pos[1:] - sorted_contact_pos[:-1])
+                if var > max_var:
+                    max_var_axis = axis
+                    max_var = var
+        gs_sidx = np.argsort(gs_contact_pos[:, max_var_axis])
+        mj_sidx = np.argsort(mj_contact_pos[:, max_var_axis])
         assert_allclose(gs_contact_pos[gs_sidx], mj_contact_pos[mj_sidx], tol=tol)
         gs_contact_normal = gs_sim.rigid_solver.collider.contact_data.normal.to_numpy()[:gs_n_contacts, 0]
         mj_contact_normal = -mj_sim.data.contact.frame[:, :3]
@@ -785,9 +883,6 @@ def check_mujoco_data_consistency(
     assert_allclose(gs_qpos[gs_q_idx], mj_qpos[mj_qs_idx], tol=tol)
 
     # ------------------------------------------------------------------------
-    mujoco.mj_fwdPosition(mj_sim.model, mj_sim.data)
-    mujoco.mj_fwdVelocity(mj_sim.model, mj_sim.data)
-    gs_sim.rigid_solver._kernel_forward_kinematics_links_geoms(np.array([0]))
 
     gs_com = gs_sim.rigid_solver.links_state.COM.to_numpy()[:, 0]
     gs_root_idx = np.unique(gs_sim.rigid_solver.links_info.root_idx.to_numpy()[gs_bodies_idx])
@@ -809,8 +904,6 @@ def check_mujoco_data_consistency(
     assert_allclose(gs_xmat[gs_bodies_idx], mj_xmat[mj_bodies_idx], tol=tol)
 
     gs_cd_vel = gs_sim.rigid_solver.links_state.cd_vel.to_numpy()[:, 0]
-    gs_cd_vel_ = gs_sim.rigid_solver.links_state.vel.to_numpy()[:, 0]
-    assert_allclose(gs_cd_vel, gs_cd_vel_, tol=tol)
     mj_cd_vel = mj_sim.data.cvel[:, 3:]
     assert_allclose(gs_cd_vel[gs_bodies_idx], mj_cd_vel[mj_bodies_idx], tol=tol)
     gs_cd_ang = gs_sim.rigid_solver.links_state.cd_ang.to_numpy()[:, 0]
