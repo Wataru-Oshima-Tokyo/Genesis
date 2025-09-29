@@ -266,7 +266,10 @@ class Collider:
         if self._collider_static_config.has_terrain:
             solver = self._solver
             links_idx = solver.geoms_info.link_idx.to_numpy()[solver.geoms_info.type.to_numpy() == gs.GEOM_TYPE.TERRAIN]
-            entity = solver._entities[solver.links_info.entity_idx.to_numpy()[links_idx[0]]]
+            entity_idx = solver.links_info.entity_idx.to_numpy()[links_idx[0]]
+            if isinstance(entity_idx, np.ndarray):
+                entity_idx = entity_idx[0]
+            entity = solver._entities[entity_idx]
 
             scale = entity.terrain_scale.astype(gs.np_float)
             rc = np.array(entity.terrain_hf.shape, dtype=gs.np_int)
@@ -506,8 +509,7 @@ def rotmatx(matin, i0, i1, i2, f0, f1, f2):
     return matres
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def collider_kernel_reset(
     envs_idx: ti.types.ndarray(),
     static_rigid_sim_config: ti.template(),
@@ -527,8 +529,7 @@ def collider_kernel_reset(
 
 
 # only used with hibernation ??
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def kernel_collider_clear(
     envs_idx: ti.types.ndarray(),
     links_state: array_class.LinksState,
@@ -581,8 +582,7 @@ def kernel_collider_clear(
             collider_state.n_contacts[i_b] = 0
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def collider_kernel_get_contacts(
     is_padded: ti.template(),
     iout: ti.types.ndarray(),
@@ -974,11 +974,17 @@ def func_contact_mpr_terrain(
     #         is_return = True
 
     if not is_return:
+        # move to terrain's frame
         geoms_state.pos[i_ga, i_b], geoms_state.quat[i_ga, i_b] = gu.ti_transform_pos_quat_by_trans_quat(
             ga_pos - geoms_state.pos[i_gb, i_b],
             ga_quat,
             ti.Vector.zero(gs.ti_float, 3),
             gu.ti_inv_quat(geoms_state.quat[i_gb, i_b]),
+        )
+        geoms_state.pos[i_gb, i_b] = ti.Vector.zero(gs.ti_float, 3)
+        geoms_state.quat[i_gb, i_b] = gu.ti_identity_quat()
+        center_a = gu.ti_transform_by_trans_quat(
+            geoms_info.center[i_ga], geoms_state.pos[i_ga, i_b], geoms_state.quat[i_ga, i_b]
         )
 
         for i_axis, i_m in ti.ndrange(3, 2):
@@ -1041,14 +1047,10 @@ def func_contact_mpr_terrain(
                                 or collider_state.prism[4, i_b][2] >= collider_state.xyz_max_min[5, i_b]
                                 or collider_state.prism[5, i_b][2] >= collider_state.xyz_max_min[5, i_b]
                             ):
-                                center_a = gu.ti_transform_by_trans_quat(geoms_info.center[i_ga], ga_pos, ga_quat)
                                 center_b = ti.Vector.zero(gs.ti_float, 3)
                                 for i_p in ti.static(range(6)):
                                     center_b = center_b + collider_state.prism[i_p, i_b]
                                 center_b = center_b / 6.0
-
-                                geoms_state.pos[i_gb, i_b] = ti.Vector.zero(gs.ti_float, 3)
-                                geoms_state.quat[i_gb, i_b] = gu.ti_identity_quat()
 
                                 is_col, normal, penetration, contact_pos = mpr.func_mpr_contact_from_centers(
                                     geoms_state,
@@ -1160,8 +1162,7 @@ def func_check_collision_valid(
     return is_valid
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def func_broad_phase(
     links_state: array_class.LinksState,
     links_info: array_class.LinksInfo,
@@ -1407,8 +1408,7 @@ def func_broad_phase(
                                     break
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def func_narrow_phase_convex_vs_convex(
     links_state: array_class.LinksState,
     links_info: array_class.LinksInfo,
@@ -1513,8 +1513,7 @@ def func_narrow_phase_convex_vs_convex(
                         )
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def func_narrow_phase_convex_specializations(
     geoms_state: array_class.GeomsState,
     geoms_info: array_class.GeomsInfo,
@@ -1568,8 +1567,7 @@ def func_narrow_phase_convex_specializations(
                     )
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def func_narrow_phase_any_vs_terrain(
     geoms_state: array_class.GeomsState,
     geoms_info: array_class.GeomsInfo,
@@ -1621,8 +1619,7 @@ def func_narrow_phase_any_vs_terrain(
                     )
 
 
-@gs.maybe_pure
-@ti.kernel
+@ti.kernel(pure=gs.use_pure)
 def func_narrow_phase_nonconvex_vs_nonterrain(
     links_state: array_class.LinksState,
     links_info: array_class.LinksInfo,

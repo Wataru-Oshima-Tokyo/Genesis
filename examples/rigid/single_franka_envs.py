@@ -4,14 +4,13 @@ import genesis as gs
 
 
 def main():
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--vis", action="store_true", default=False)
     parser.add_argument("-c", "--cpu", action="store_true", default=False)
     parser.add_argument("-s", "--sep", action="store_true", default=False)
     parser.add_argument("-r", "--record", action="store_true", default=False)
     parser.add_argument("-n", "--num_env", type=int, default=1)
-    parser.add_argument("--horizon", type=int, default=1000)
+    parser.add_argument("--horizon", type=int, default=100)
     args = parser.parse_args()
 
     ########################## init ##########################
@@ -52,7 +51,7 @@ def main():
         pos=(3.5, 0.0, 2.5),
         lookat=(0, 0, 0.5),
         fov=30,
-        GUI=True,
+        GUI=args.vis,
     )
     ########################## build ##########################
     scene.build(n_envs=args.num_env, env_spacing=(0.5, 0.5))

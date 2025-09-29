@@ -1,9 +1,9 @@
+import enum
 import itertools
 import os
 import re
 import sys
 import time
-import enum
 
 import numpy as np
 import pyglet
@@ -17,8 +17,7 @@ from genesis.utils.image_exporter import FrameImageExporter, as_grayscale_image
 from genesis.utils.misc import tensor_to_array
 
 from .conftest import IS_INTERACTIVE_VIEWER_AVAILABLE
-from .utils import assert_allclose, assert_array_equal, get_hf_dataset
-
+from .utils import assert_allclose, assert_array_equal, rgb_array_to_png_bytes
 
 IMG_STD_ERR_THR = 1.0
 
@@ -490,6 +489,7 @@ def test_render_api_advanced(tmp_path, n_envs, show_viewer, png_snapshot, render
             assert f.read() == png_snapshot
 
 
+@pytest.mark.field_only
 @pytest.mark.parametrize(
     "renderer_type",
     [RENDERER_TYPE.RASTERIZER, RENDERER_TYPE.BATCHRENDER_RASTERIZER, RENDERER_TYPE.BATCHRENDER_RAYTRACER],
@@ -499,14 +499,29 @@ def test_render_api_advanced(tmp_path, n_envs, show_viewer, png_snapshot, render
 def test_segmentation_map(segmentation_level, particle_mode, renderer_type, renderer, show_viewer):
     """Test segmentation rendering."""
     scene = gs.Scene(
+        # Using implicit solver to allow for larger timestep without failure on GPU backend
         fem_options=gs.options.FEMOptions(
             use_implicit_solver=True,
+        ),
+        # Disable many physics features to speed-up compilation
+        rigid_options=gs.options.RigidOptions(
+            enable_collision=False,
+        ),
+        coupler_options=gs.options.LegacyCouplerOptions(
+            rigid_mpm=False,
+            rigid_sph=False,
+            rigid_pbd=False,
+            rigid_fem=False,
+            mpm_sph=False,
+            mpm_pbd=False,
+            fem_mpm=False,
+            fem_sph=False,
         ),
         vis_options=gs.options.VisOptions(
             segmentation_level=segmentation_level,
         ),
-        show_viewer=False,
         renderer=renderer,
+        show_viewer=False,
     )
 
     robot = scene.add_entity(
@@ -531,17 +546,15 @@ def test_segmentation_map(segmentation_level, particle_mode, renderer_type, rend
         )
 
     ducks = []
-    spacing = 0.5
-    for i, pack in enumerate(materials):
+    for i, (material, vis_mode) in enumerate(materials):
         col_idx, row_idx = i // 3 - 1, i % 3 - 1
-        material, vis_mode = pack
         ducks.append(
             scene.add_entity(
                 material=material,
                 morph=gs.morphs.Mesh(
                     file="meshes/duck.obj",
                     scale=0.1,
-                    pos=(col_idx * spacing, row_idx * spacing, 0.5),
+                    pos=(col_idx * 0.5, row_idx * 0.5, 0.5),
                 ),
                 surface=gs.surfaces.Default(
                     color=np.random.rand(3),
@@ -551,7 +564,8 @@ def test_segmentation_map(segmentation_level, particle_mode, renderer_type, rend
         )
 
     camera = scene.add_camera(
-        res=(512, 512),
+        # Using very low resolution to speed up rendering
+        res=(128, 128),
         pos=(2.0, 0.0, 2.0),
         lookat=(0, 0, 0.5),
         fov=40,
@@ -688,7 +702,10 @@ def test_point_cloud(renderer_type, renderer, show_viewer):
 
 @pytest.mark.required
 @pytest.mark.parametrize("renderer_type", [RENDERER_TYPE.RASTERIZER])
-def test_debug_draw(show_viewer):
+def test_draw_debug(show_viewer):
+    if "GS_DISABLE_OFFSCREEN_MARKERS" in os.environ:
+        pytest.skip("Offscreen rendering of markers is forcibly disabled. Skipping...")
+
     scene = gs.Scene(
         show_viewer=show_viewer,
     )
@@ -715,12 +732,12 @@ def test_debug_draw(show_viewer):
         radius=0.01,
         color=(1, 0, 0, 1),
     )
-    scene.draw_debug_sphere(
+    sphere_obj = scene.draw_debug_sphere(
         pos=(-0.3, 0.3, 0.0),
         radius=0.15,
         color=(0, 1, 0),
     )
-    scene.draw_debug_frame(
+    frame_obj = scene.draw_debug_frame(
         T=np.array(
             [
                 [1.0, 0.0, 0.0, -0.3],
@@ -733,14 +750,21 @@ def test_debug_draw(show_viewer):
         origin_size=0.03,
         axis_radius=0.02,
     )
-    scene.step()
-    rgb_array, *_ = cam.render(rgb=True, depth=False, segmentation=False, colorize_seg=False, normal=False)
-    if "GS_DISABLE_OFFSCREEN_MARKERS" in os.environ:
-        assert_allclose(np.std(rgb_array.reshape((-1, 3)), axis=0), 0.0, tol=gs.EPS)
-    else:
-        assert np.max(np.std(rgb_array.reshape((-1, 3)), axis=0)) > 10.0
+    scene.visualizer.update()
+    rgb_array_orig, *_ = cam.render(rgb=True, depth=False, segmentation=False, colorize_seg=False, normal=False)
+    assert np.max(np.std(rgb_array_orig.reshape((-1, 3)), axis=0)) > 10.0
+
+    for _ in range(2):
+        poses = gu.trans_quat_to_T(2.0 * (np.random.rand(3, 3) - 0.5), np.random.rand(3, 4))
+        scene.visualizer.context.update_debug_objects([frame_obj, sphere_obj], poses)
+        scene.visualizer.update()
+        rgb_array, *_ = cam.render(rgb=True, depth=False, segmentation=False, colorize_seg=False, normal=False)
+        rgb_delta = np.minimum(np.abs(rgb_array.astype(np.int32) - rgb_array_orig.astype(np.int32)), 255)
+        assert np.max(np.std(rgb_delta.reshape((-1, 3)), axis=0)) > 10.0
+        rgb_array_orig = rgb_array
+
     scene.clear_debug_objects()
-    scene.step()
+    scene.visualizer.update()
     rgb_array, *_ = cam.render(rgb=True, depth=False, segmentation=False, colorize_seg=False, normal=False)
     assert_allclose(np.std(rgb_array.reshape((-1, 3)), axis=0), 0.0, tol=gs.EPS)
 
@@ -775,8 +799,11 @@ def test_interactive_viewer_key_press(tmp_path, monkeypatch, png_snapshot, show_
         viewer_options=gs.options.ViewerOptions(
             # Force screen-independent low-quality resolution when running unit tests for consistency
             res=(640, 480),
-            # Enable running in background thread if supported by the platform
-            run_in_thread=sys.platform == "linux",
+            # Enable running in background thread if supported by the platform.
+            # Note that windows is not supported because it would trigger the following exception if some previous tests
+            # was only using rasterizer without interactive viewer:
+            # 'EventLoop.run() must be called from the same thread that imports pyglet.app'.
+            run_in_thread=(sys.platform == "linux"),
         ),
         show_viewer=True,
     )
@@ -856,3 +883,117 @@ def test_render_planes(tmp_path, png_snapshot, renderer):
     for image_file in sorted(tmp_path.rglob("*.png")):
         with open(image_file, "rb") as f:
             assert f.read() == png_snapshot
+
+
+@pytest.mark.field_only
+@pytest.mark.required
+@pytest.mark.parametrize("renderer_type", [RENDERER_TYPE.RASTERIZER])
+@pytest.mark.skipif(not IS_INTERACTIVE_VIEWER_AVAILABLE, reason="Interactive viewer not supported on this platform.")
+def test_batch_deformable_render(tmp_path, monkeypatch, png_snapshot):
+    CAM_RES = (640, 480)
+
+    # Disable text rendering as it is messing up with pixel matching when using old CPU-based Mesa driver
+    monkeypatch.setattr("genesis.ext.pyrender.renderer.Renderer.render_texts", lambda *args, **kwargs: None)
+
+    # Increase pixel matching tolerance.
+    # We don't care about "perfect" match here and it is changing when particules are involved.
+    png_snapshot.extension._std_err_threshold = 10.0
+
+    scene = gs.Scene(
+        sim_options=gs.options.SimOptions(
+            dt=5e-4,
+            substeps=10,
+        ),
+        pbd_options=gs.options.PBDOptions(
+            particle_size=1e-2,
+        ),
+        mpm_options=gs.options.MPMOptions(
+            lower_bound=(-1.0, -1.0, -0.2),
+            upper_bound=(1.0, 1.0, 1.0),
+        ),
+        sph_options=gs.options.SPHOptions(
+            lower_bound=(-0.5, -0.5, 0.0),
+            upper_bound=(0.5, 0.5, 1),
+            particle_size=0.01,
+        ),
+        viewer_options=gs.options.ViewerOptions(
+            camera_pos=(6.0, 0.0, 4.0),
+            camera_lookat=(0.0, 0.0, 0.0),
+            camera_fov=40,
+            res=CAM_RES,
+            run_in_thread=(sys.platform == "linux"),
+        ),
+        vis_options=gs.options.VisOptions(
+            show_world_frame=True,
+            visualize_mpm_boundary=True,
+            visualize_sph_boundary=True,
+        ),
+        show_viewer=True,
+    )
+
+    plane = scene.add_entity(
+        morph=gs.morphs.Plane(),
+        material=gs.materials.Rigid(
+            needs_coup=True,
+            coup_friction=0.0,
+        ),
+    )
+    cube = scene.add_entity(
+        morph=gs.morphs.Box(
+            pos=(0.5, 0.5, 0.2),
+            size=(0.2, 0.2, 0.2),
+            euler=(30, 40, 0),
+            fixed=True,
+        ),
+        material=gs.materials.Rigid(
+            needs_coup=True,
+            coup_friction=0.0,
+        ),
+    )
+    cloth = scene.add_entity(
+        morph=gs.morphs.Mesh(
+            file="meshes/cloth.obj",
+            scale=1.0,
+            pos=(0.5, 0.5, 0.5),
+            euler=(180.0, 0.0, 0.0),
+        ),
+        material=gs.materials.PBD.Cloth(),
+        surface=gs.surfaces.Default(
+            color=(0.2, 0.4, 0.8, 1.0),
+        ),
+    )
+    worm = scene.add_entity(
+        morph=gs.morphs.Mesh(
+            file="meshes/worm/worm.obj",
+            pos=(0.3, 0.3, 0.001),
+            scale=0.1,
+            euler=(90, 0, 0),
+        ),
+        material=gs.materials.MPM.Muscle(
+            E=5e5,
+            nu=0.45,
+            rho=10000.0,
+            model="neohooken",
+            n_groups=4,
+        ),
+    )
+    liquid = scene.add_entity(
+        morph=gs.morphs.Box(
+            pos=(0.0, 0.0, 0.65),
+            size=(0.4, 0.4, 0.4),
+        ),
+        material=gs.materials.SPH.Liquid(),
+        surface=gs.surfaces.Default(
+            color=(0.4, 0.8, 1.0),
+            vis_mode="particle",
+        ),
+    )
+    scene.build(n_envs=4, env_spacing=(2.0, 2.0))
+
+    pyrender_viewer = scene.visualizer.viewer._pyrender_viewer
+    assert pyrender_viewer.is_active
+    rgb_arr, *_ = pyrender_viewer.render_offscreen(
+        pyrender_viewer._camera_node, pyrender_viewer._renderer, rgb=True, depth=False, seg=False, normal=False
+    )
+
+    assert rgb_array_to_png_bytes(rgb_arr) == png_snapshot

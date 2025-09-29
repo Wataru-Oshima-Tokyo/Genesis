@@ -1,4 +1,5 @@
 import platform
+import io
 import os
 import subprocess
 import time
@@ -30,8 +31,8 @@ from genesis.options.morphs import URDF_FORMAT, MJCF_FORMAT, MESH_FORMATS, GLTF_
 REPOSITY_URL = "Genesis-Embodied-AI/Genesis"
 DEFAULT_BRANCH_NAME = "main"
 
-HUGGINGFACE_ASSETS_REVISION = "0c0bb46db0978a59524381194478cf390b3ff996"
-HUGGINGFACE_SNAPSHOT_REVISION = "9a192b8d4d34401b7e20d43601ff73f80516cb2b"
+HUGGINGFACE_ASSETS_REVISION = "4d96c3512df4421d4dd3d626055d0d1ebdfdd7cc"
+HUGGINGFACE_SNAPSHOT_REVISION = "74f5b178fb96dfa17a05d98585af8e212db9b4e6"
 
 MESH_EXTENSIONS = (".mtl", *MESH_FORMATS, *GLTF_FORMATS, *USD_FORMATS)
 IMAGE_EXTENSIONS = (".png", ".jpg")
@@ -245,7 +246,8 @@ def get_hf_dataset(
     return asset_path
 
 
-def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None, err_msg=""):
+def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None, err_msg=None):
+    # Determine absolute and relative tolerance from input arguments
     assert (tol is not None) ^ (atol is not None or rtol is not None)
     if tol is not None:
         atol = tol
@@ -255,21 +257,28 @@ def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None, err_msg=
     if atol is None:
         atol = 0.0
 
+    # Convert input arguments as numpy arrays
     args = [actual, desired]
     for i, arg in enumerate(args):
-        if isinstance(arg, torch.Tensor):
-            arg = tensor_to_array(arg)
-        elif isinstance(arg, (tuple, list)):
-            arg = [tensor_to_array(val) for val in arg]
-        args[i] = np.asanyarray(arg)
+        if isinstance(arg, (tuple, list)):
+            arg = np.stack([tensor_to_array(val) for val in arg], axis=0)
+        args[i] = tensor_to_array(arg)
 
+    # Early return without checking anything is both arrays are empty (0D arrays have size 1).
     if all(e.size == 0 for e in args):
         return
 
-    np.testing.assert_allclose(*map(np.squeeze, args), atol=atol, rtol=rtol, err_msg=err_msg)
+    # Try to make sure both arrays have the exact same shape.
+    # First, try to broadcast both matrices. Then it is does not work, squeeze them before trying again.
+    try:
+        args = np.broadcast_arrays(*args)
+    except ValueError:
+        args = np.broadcast_arrays(*map(np.squeeze, args))
+
+    np.testing.assert_allclose(*args, atol=atol, rtol=rtol, err_msg=err_msg)
 
 
-def assert_array_equal(actual, desired, *, err_msg=""):
+def assert_array_equal(actual, desired, *, err_msg=None):
     assert_allclose(actual, desired, atol=0.0, rtol=0.0, err_msg=err_msg)
 
 
@@ -491,6 +500,7 @@ def build_mujoco_sim(
     model.opt.solver = mj_solver
     model.opt.integrator = mj_integrator
     model.opt.cone = mujoco.mjtCone.mjCONE_PYRAMIDAL
+    model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_ISLAND
     model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_EULERDAMP)
     model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_REFSAFE)
     model.opt.disableflags &= ~np.uint32(mujoco.mjtDisableBit.mjDSBL_GRAVITY)
@@ -1014,3 +1024,10 @@ def simulate_and_check_mujoco_consistency(gs_sim, mj_sim, qpos=None, qvel=None, 
         gs_sim.scene.step()
         # if gs_sim.scene.visualizer:
         #     gs_sim.scene.visualizer.update()
+
+
+def rgb_array_to_png_bytes(rgb_arr: np.ndarray) -> bytes:
+    img = Image.fromarray(rgb_arr)
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return buffer.getvalue()
