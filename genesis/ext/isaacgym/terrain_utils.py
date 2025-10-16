@@ -356,6 +356,7 @@ def stepping_stones_terrain(terrain, stone_size, stone_distance, max_height, pla
 
 def stamble_terrain(
         terrain,
+        height_range_m = (0.10, 0.25),
         patch_size_m=0.4,
         gap_m=0.1):   
     """
@@ -365,7 +366,6 @@ def stamble_terrain(
     """
     # Parameters
     platform_size_m = 0.5
-    height_range_m = (0.10, 0.25)
 
     # Convert to terrain units
     patch_size = int(patch_size_m / terrain.horizontal_scale)
@@ -429,6 +429,7 @@ def stamble_terrain(
 
 def blocky_terrain(
         terrain,
+        height_range_m = (0.10, 0.25),
         patch_size_m=0.4,
         gap_m=0.1):   
     """
@@ -438,7 +439,6 @@ def blocky_terrain(
     """
     # Parameters
     platform_size_m = 0.5
-    height_range_m = (0.10, 0.25)
 
     # Convert to terrain units
     patch_size = int(patch_size_m / terrain.horizontal_scale)

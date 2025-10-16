@@ -7,3 +7,9 @@
 [submodule "ts_locomotion"]
 	path = ts_locomotion
 	url = https://github.com/TechShare-inc/ts_locomotion.git
+[submodule "rsl_rl"]
+	path = rsl_rl
+	url = https://github.com/Wataru-Oshima-Tokyo/rsl_rl.git
+[submodule "rl_locomotion"]
+	path = rl_locomotion
+	url = https://github.com/Wataru-Oshima-Tokyo/rl_locomotion.git

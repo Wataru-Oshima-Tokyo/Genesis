@@ -1,0 +1,131 @@
+<?xml version="1.0"?>
+<robot name="single_step">
+  <!-- =========================
+       Single-step square frames
+       ========================= -->
+
+  <!-- Helper values (by comment):
+       SIDE = 4.0 m  | THICK = 0.20 m
+       For each set: beam height = H, beam center z = H/2
+  -->
+  <link name="planeLink">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0" ixz="0" iyy="1.0" iyz="0" izz="1.0"/>
+    </inertial>
+    <collision>
+      <!-- A 200×200×10 box centered with top at z=0 -->
+      <origin xyz="0 0 -5"/>
+      <geometry><box size="200 200 10"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 -0.1"/>
+      <geometry><box size="200 200 0.2"/></geometry>
+    </visual>
+  </link>
+  <!-- === 10 cm high ring at R = 1.0 m (t = 0.20) === -->
+  <!-- offset = 1.10, L = 2.40 -->
+  <link name="square5_top">
+    <visual><origin xyz="0 1.10 0.025"/><geometry><box size="2.40 0.20 0.05"/></geometry></visual>
+    <collision><origin xyz="0 1.10 0.025"/><geometry><box size="2.40 0.20 0.05"/></geometry></collision>
+  </link>
+  <joint name="square5_top_joint" type="fixed"><parent link="planeLink"/><child link="square5_top"/></joint>
+
+  <link name="square5_bottom">
+    <visual><origin xyz="0 -1.10 0.025"/><geometry><box size="2.40 0.20 0.05"/></geometry></visual>
+    <collision><origin xyz="0 -1.10 0.025"/><geometry><box size="2.40 0.20 0.05"/></geometry></collision>
+  </link>
+  <joint name="square5_bottom_joint" type="fixed"><parent link="planeLink"/><child link="square5_bottom"/></joint>
+
+  <link name="square5_left">
+    <visual><origin xyz="-1.10 0 0.025"/><geometry><box size="0.20 2.40 0.05"/></geometry></visual>
+    <collision><origin xyz="-1.10 0 0.025"/><geometry><box size="0.20 2.40 0.05"/></geometry></collision>
+  </link>
+  <joint name="square5_left_joint" type="fixed"><parent link="planeLink"/><child link="square5_left"/></joint>
+
+  <link name="square5_right">
+    <visual><origin xyz="1.10 0 0.025"/><geometry><box size="0.20 2.40 0.05"/></geometry></visual>
+    <collision><origin xyz="1.10 0 0.025"/><geometry><box size="0.20 2.40 0.05"/></geometry></collision>
+  </link>
+  <joint name="square5_right_joint" type="fixed"><parent link="planeLink"/><child link="square5_right"/></joint>
+
+
+  <!-- === 17 cm high ring at R = 3.0 m === -->
+  <!-- offset = 3.10, L = 6.40 -->
+  <link name="square10_top">
+    <visual><origin xyz="0 3.10 0.05"/><geometry><box size="6.40 0.20 0.1"/></geometry></visual>
+    <collision><origin xyz="0 3.10 0.05"/><geometry><box size="6.40 0.20 0.1"/></geometry></collision>
+  </link>
+  <joint name="square10_top_joint" type="fixed"><parent link="planeLink"/><child link="square10_top"/></joint>
+
+  <link name="square10_bottom">
+    <visual><origin xyz="0 -3.10 0.05"/><geometry><box size="6.40 0.20 0.1"/></geometry></visual>
+    <collision><origin xyz="0 -3.10 0.05"/><geometry><box size="6.40 0.20 0.1"/></geometry></collision>
+  </link>
+  <joint name="square10_bottom_joint" type="fixed"><parent link="planeLink"/><child link="square10_bottom"/></joint>
+
+  <link name="square10_left">
+    <visual><origin xyz="-3.10 0 0.05"/><geometry><box size="0.20 6.40 0.1"/></geometry></visual>
+    <collision><origin xyz="-3.10 0 0.05"/><geometry><box size="0.20 6.40 0.1"/></geometry></collision>
+  </link>
+  <joint name="square10_left_joint" type="fixed"><parent link="planeLink"/><child link="square10_left"/></joint>
+
+  <link name="square10_right">
+    <visual><origin xyz="3.10 0 0.05"/><geometry><box size="0.20 6.40 0.1"/></geometry></visual>
+    <collision><origin xyz="3.10 0 0.05"/><geometry><box size="0.20 6.40 0.1"/></geometry></collision>
+  </link>
+  <joint name="square10_right_joint" type="fixed"><parent link="planeLink"/><child link="square10_right"/></joint>
+
+
+  <link name="square12_top">
+    <visual><origin xyz="0 5.10 0.05"/><geometry><box size="10.40 0.20 0.1"/></geometry></visual>
+    <collision><origin xyz="0 5.10 0.05"/><geometry><box size="10.40 0.20 0.1"/></geometry></collision>
+  </link>
+  <joint name="square12_top_joint" type="fixed"><parent link="planeLink"/><child link="square12_top"/></joint>
+
+  <link name="square12_bottom">
+    <visual><origin xyz="0 -5.10 0.05"/><geometry><box size="10.40 0.20 0.1"/></geometry></visual>
+    <collision><origin xyz="0 -5.10 0.05"/><geometry><box size="10.40 0.20 0.1"/></geometry></collision>
+  </link>
+  <joint name="square12_bottom_joint" type="fixed"><parent link="planeLink"/><child link="square12_bottom"/></joint>
+
+  <link name="square12_left">
+    <visual><origin xyz="-5.10 0 0.05"/><geometry><box size="0.20 10.40 0.1"/></geometry></visual>
+    <collision><origin xyz="-5.10 0 0.05"/><geometry><box size="0.20 10.40 0.1"/></geometry></collision>
+  </link>
+  <joint name="square12_left_joint" type="fixed"><parent link="planeLink"/><child link="square12_left"/></joint>
+
+  <link name="square12_right">
+    <visual><origin xyz="5.10 0 0.05"/><geometry><box size="0.20 10.40 0.1"/></geometry></visual>
+    <collision><origin xyz="5.10 0 0.05"/><geometry><box size="0.20 10.40 0.1"/></geometry></collision>
+  </link>
+  <joint name="square12_right_joint" type="fixed"><parent link="planeLink"/><child link="square12_right"/></joint>
+
+
+  <link name="square15_top">
+    <visual><origin xyz="0 7.10 0.05"/><geometry><box size="14.40 0.20 0.1"/></geometry></visual>
+    <collision><origin xyz="0 7.10 0.05"/><geometry><box size="14.40 0.20 0.1"/></geometry></collision>
+  </link>
+  <joint name="square15_top_joint" type="fixed"><parent link="planeLink"/><child link="square15_top"/></joint>
+
+  <link name="square15_bottom">
+    <visual><origin xyz="0 -7.10 0.05"/><geometry><box size="14.40 0.20 0.1"/></geometry></visual>
+    <collision><origin xyz="0 -7.10 0.05"/><geometry><box size="14.40 0.20 0.1"/></geometry></collision>
+  </link>
+  <joint name="square15_bottom_joint" type="fixed"><parent link="planeLink"/><child link="square15_bottom"/></joint>
+
+  <link name="square15_left">
+    <visual><origin xyz="-7.10 0 0.05"/><geometry><box size="0.20 14.40 0.1"/></geometry></visual>
+    <collision><origin xyz="-7.10 0 0.05"/><geometry><box size="0.20 14.40 0.1"/></geometry></collision>
+  </link>
+  <joint name="square15_left_joint" type="fixed"><parent link="planeLink"/><child link="square15_left"/></joint>
+
+  <link name="square15_right">
+    <visual><origin xyz="7.10 0 0.05"/><geometry><box size="0.20 14.40 0.1"/></geometry></visual>
+    <collision><origin xyz="7.10 0 0.05"/><geometry><box size="0.20 14.40 0.1"/></geometry></collision>
+  </link>
+  <joint name="square15_right_joint" type="fixed"><parent link="planeLink"/><child link="square15_right"/></joint>
+
+
+</robot>

@@ -61,7 +61,7 @@
   </asset>
 
   <worldbody>
-    <body name="base" pos="0 0 0.445" childclass="go2">
+    <body name="base_link" pos="0 0 0.445" childclass="go2">
       <inertial pos="0.021112 0 -0.005366" quat="-0.000543471 0.713435 -0.00173769 0.700719" mass="6.921"
         diaginertia="0.107027 0.0980771 0.0244531"/>
       <freejoint name="root"/>
@@ -97,6 +97,62 @@
             <geom mesh="calf_mirror_1" material="black" class="visual"/>
             <geom size="0.013 0.06" pos="0.01 0 -0.06" quat="0.995004 0 -0.0998334 0" type="cylinder" class="collision"/>
             <geom size="0.011 0.0425" pos="0.015 0.0 -0.158" quat="0 0.0436194 0 0.9990482" type="cylinder" class="collision"/>
+            <body name="FR_bumper" pos="0.0157 0 -0.195">  <!-- 足首付近へ移動（-0.213 ちょい上） -->
+              <geom type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="FR_bumper_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="FR_bumper2" pos="-0.01 0 0.015">
+              <!-- physical ring identical to calf tube -->
+              <geom type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"             
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <!-- visual overlay, same pose -->
+              <geom name="FR_bumper2_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="FR_bumper3" pos="-0.000 0 -0.185"> 
+              <geom type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="FR_bumper3_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
             <body name="FR_foot" pos="0 0 -0.213">
               <geom name="FR" class="foot"/>
             </body>
@@ -126,6 +182,62 @@
             <geom mesh="calf_1" material="black" class="visual"/>
             <geom size="0.012 0.06" pos="0.008 0 -0.06" quat="0.994493 0 -0.104807 0" type="cylinder" class="collision"/>
             <geom size="0.011 0.0425" pos="0.015 0.0 -0.158" quat="0 0.0436194 0 0.9990482" type="cylinder" class="collision"/>
+            <body name="FL_bumper" pos="0.0157 0 -0.195">  <!-- 足首付近へ移動（-0.213 ちょい上） -->
+              <geom type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="FL_bumper_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="FL_bumper2" pos="-0.01 0 0.015">
+              <!-- physical ring identical to calf tube -->
+              <geom type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"             
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <!-- visual overlay, same pose -->
+              <geom name="FL_bumper2_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="FL_bumper3" pos="-0.000 0 -0.185"> 
+              <geom type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="FL_bumper3_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
             <body name="FL_foot" pos="0 0 -0.213">
               <geom name="FL" class="foot"/>
             </body>
@@ -155,6 +267,62 @@
             <geom mesh="calf_mirror_1" material="black" class="visual"/>
             <geom size="0.013 0.06" pos="0.01 0 -0.06" quat="0.995004 0 -0.0998334 0" type="cylinder" class="collision"/>
             <geom size="0.011 0.0425" pos="0.015 0.0 -0.158" quat="0 0.0436194 0 0.9990482" type="cylinder" class="collision"/>
+            <body name="RR_bumper" pos="-0.01 0 0.015">
+              <!-- physical ring identical to calf tube -->
+              <geom type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"             
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <!-- visual overlay, same pose -->
+              <geom name="RR_bumper_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="RR_bumper2" pos="0.0157 0 -0.195"> 
+              <geom type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="RR_bumper2_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="RR_bumper3" pos="-0.000 0 -0.185"> 
+              <geom type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="RR_bumper3_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
             <body name="RR_foot" pos="0 0 -0.213">
               <geom name="RR" class="foot"/>
             </body>
@@ -184,6 +352,62 @@
             <geom mesh="calf_1" material="black" class="visual"/>
             <geom size="0.013 0.06" pos="0.01 0 -0.06" quat="0.995004 0 -0.0998334 0" type="cylinder" class="collision"/>
             <geom size="0.011 0.0425" pos="0.015 0.0 -0.158" quat="0 0.0436194 0 0.9990482" type="cylinder" class="collision"/>
+            <body name="RL_bumper" pos="-0.01 0 0.015">
+              <!-- physical ring identical to calf tube -->
+              <geom type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"             
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <!-- visual overlay, same pose -->
+              <geom name="RL_bumper_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.995004 0 0.2998334 0"
+                    size="0.005 0.015"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="RL_bumper2" pos="0.0157 0 -0.195"> 
+              <geom type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="RL_bumper2_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.089 0"
+                    size="0.012 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
+            <body name="RL_bumper3" pos="-0.000 0 -0.185"> 
+              <geom type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"  
+                    density="0"
+                    friction="0.9 0.02 0.01"
+                    condim="6"
+                    contype="1" conaffinity="1"
+                    group="4"/>
+
+              <geom name="RL_bumper3_vis"
+                    class="visual"
+                    type="cylinder"
+                    quat="0.996 0 0.289 0"
+                    size="0.01 0.02"
+                    rgba="1 0 0 0.3"
+                    contype="0" conaffinity="0"/>
+            </body>
             <body name="RL_foot" pos="0 0 -0.213">
               <geom name="RL" class="foot"/>
             </body>

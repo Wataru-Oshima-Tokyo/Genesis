@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="plane">
+
+  <!-- 可変：段の高さ（厚み）。例: 0.05 → 5cm -->
+  <xacro:arg name="step_h_arg" default="0.15"/>
+  <xacro:property name="step_h" value="$(arg step_h_arg)"/>
+
+  <!-- 固定：レイアウト（元URDFに合わせて固定） -->
+  <xacro:property name="inner_half" value="2.0"/>
+  <xacro:property name="inner_bar_w" value="0.2"/>
+  <xacro:property name="inner_thick" value="${0.5*step_h}"/>
+  <xacro:property name="inner_z" value="${0.25*step_h}"/>
+
+  <xacro:property name="frame_half" value="3.4"/>
+  <xacro:property name="frame_bar_w" value="0.15"/>
+  <xacro:property name="frame_thick" value="${step_h}"/>
+  <xacro:property name="frame_z" value="${0.5*step_h}"/>
+
+  <!-- 階段リングの半径は固定（元の 6.0/6.3/6.6 と 6.9/7.2/7.5）-->
+  <xacro:property name="stair_r1" value="6.0"/>
+  <xacro:property name="stair_r2" value="6.3"/>
+  <xacro:property name="stair_r3" value="6.6"/>
+  <xacro:property name="down_r1"  value="6.9"/>
+  <xacro:property name="down_r2"  value="7.2"/>
+  <xacro:property name="down_r3"  value="7.5"/>
+  <xacro:property name="ring_bar_w" value="0.3"/>
+
+    <xacro:macro name="add_ring" params="prefix parent x_half y_half zc bar_w z_h overlap:=0.01">
+    <!-- TOP / BOTTOM: X 方向を overlap×2 ぶん延長 -->
+    <link name="${prefix}_top">
+        <visual>   <origin xyz="0 ${y_half} ${zc}"/>
+        <geometry><box size="${2*(x_half + overlap)} ${bar_w} ${z_h}"/></geometry>
+        </visual>
+        <collision><origin xyz="0 ${y_half} ${zc}"/>
+        <geometry><box size="${2*(x_half + overlap)} ${bar_w} ${z_h}"/></geometry>
+        </collision>
+    </link>
+    <joint name="${prefix}_top_joint" type="fixed">
+        <parent link="${parent}"/><child link="${prefix}_top"/>
+    </joint>
+
+    <link name="${prefix}_bottom">
+        <visual>   <origin xyz="0 ${-y_half} ${zc}"/>
+        <geometry><box size="${2*(x_half + overlap)} ${bar_w} ${z_h}"/></geometry>
+        </visual>
+        <collision><origin xyz="0 ${-y_half} ${zc}"/>
+        <geometry><box size="${2*(x_half + overlap)} ${bar_w} ${z_h}"/></geometry>
+        </collision>
+    </link>
+    <joint name="${prefix}_bottom_joint" type="fixed">
+        <parent link="${parent}"/><child link="${prefix}_bottom"/>
+    </joint>
+
+    <!-- LEFT / RIGHT: Y 方向を overlap×2 ぶん延長 -->
+    <link name="${prefix}_left">
+        <visual>   <origin xyz="${-x_half} 0 ${zc}"/>
+        <geometry><box size="${bar_w} ${2*(y_half + overlap)} ${z_h}"/></geometry>
+        </visual>
+        <collision><origin xyz="${-x_half} 0 ${zc}"/>
+        <geometry><box size="${bar_w} ${2*(y_half + overlap)} ${z_h}"/></geometry>
+        </collision>
+    </link>
+    <joint name="${prefix}_left_joint" type="fixed">
+        <parent link="${parent}"/><child link="${prefix}_left"/>
+    </joint>
+
+    <link name="${prefix}_right">
+        <visual>   <origin xyz="${x_half} 0 ${zc}"/>
+        <geometry><box size="${bar_w} ${2*(y_half + overlap)} ${z_h}"/></geometry>
+        </visual>
+        <collision><origin xyz="${x_half} 0 ${zc}"/>
+        <geometry><box size="${bar_w} ${2*(y_half + overlap)} ${z_h}"/></geometry>
+        </collision>
+    </link>
+    <joint name="${prefix}_right_joint" type="fixed">
+        <parent link="${parent}"/><child link="${prefix}_right"/>
+    </joint>
+    </xacro:macro>
+
+  <!-- 地面 -->
+  <link name="planeLink">
+    <contact><lateral_friction value="0.01"/></contact>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 -0.1"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0" ixz="0" iyy="1.0" iyz="0" izz="1.0"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -0.1"/>
+      <geometry><mesh filename="plane100_light.obj" scale="1 1 1"/></geometry>
+      <material name="white"><color rgba="1 1 1 1"/></material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -5"/>
+      <geometry><box size="200 200 10"/></geometry>
+    </collision>
+  </link>
+
+  <!-- 内側 2m 枠 -->
+  <xacro:add_ring prefix="box_inner1" parent="planeLink"
+                  x_half="${inner_half}" y_half="${inner_half}"
+                  zc="${inner_z}" bar_w="${inner_bar_w}" z_h="${inner_thick}"/>
+
+  <!-- 外枠 6.8m -->
+  <xacro:add_ring prefix="box" parent="planeLink"
+                  x_half="${frame_half}" y_half="${frame_half}"
+                  zc="${frame_z}" bar_w="${frame_bar_w}" z_h="${frame_thick}"/>
+
+  <!-- 階段：高さだけ可変（段1/2/3 = 0.5/1.5/2.5 × step_h） -->
+  <!-- 近い外周（stair1〜3） -->
+  <xacro:add_ring prefix="box_stair1" parent="planeLink"
+                  x_half="${stair_r1}" y_half="${stair_r1}"
+                  zc="${0.5*step_h}" bar_w="${ring_bar_w}" z_h="${step_h}"/>
+  <xacro:add_ring prefix="box_stair2" parent="planeLink"
+                  x_half="${stair_r2}" y_half="${stair_r2}"
+                  zc="${1.5*step_h}" bar_w="${ring_bar_w}" z_h="${step_h}"/>
+  <xacro:add_ring prefix="box_stair3" parent="planeLink"
+                  x_half="${stair_r3}" y_half="${stair_r3}"
+                  zc="${2.5*step_h}" bar_w="${ring_bar_w}" z_h="${step_h}"/>
+
+  <!-- さらに外側（down1〜3）。元URDFと同じ高さの並びを維持 -->
+  <xacro:add_ring prefix="box_down1" parent="planeLink"
+                  x_half="${down_r1}" y_half="${down_r1}"
+                  zc="${2.5*step_h}" bar_w="${ring_bar_w}" z_h="${step_h}"/>
+  <xacro:add_ring prefix="box_down2" parent="planeLink"
+                  x_half="${down_r2}" y_half="${down_r2}"
+                  zc="${1.5*step_h}" bar_w="${ring_bar_w}" z_h="${step_h}"/>
+  <xacro:add_ring prefix="box_down3" parent="planeLink"
+                  x_half="${down_r3}" y_half="${down_r3}"
+                  zc="${0.5*step_h}" bar_w="${ring_bar_w}" z_h="${step_h}"/>
+
+</robot>

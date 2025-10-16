@@ -1109,9 +1109,9 @@ class Terrain(Morph):
     vertical_scale: float = 0.005  # meter height of each step in the subterrain
     uv_scale: float = 1.0
     subterrain_types: Any = [
-        ["flat_terrain", "random_uniform_terrain", "stepping_stones_terrain", "stamble_terrain", "blocky_terrain"],
-        ["pyramid_sloped_terrain","pyramid_down_sloped_terrain", "discrete_obstacles_terrain", "wave_terrain"],
-        ["random_uniform_terrain", "pyramid_stairs_terrain", "pyramid_down_stairs_terrain", "pyramid_steep_down_stairs_terrain", "sloped_terrain"],
+        ["flat_terrain", "random_uniform_terrain", "stepping_stones_terrain", "stamble_terrain", "blocky_terrain", "shallow_stamble_terrain", "shallow_blocky_terrain"],
+        ["pyramid_sloped_terrain","pyramid_down_sloped_terrain", "discrete_obstacles_terrain", "shallow_discrete_obstacles_terrain", "wave_terrain"],
+        ["random_uniform_terrain", "pyramid_stairs_terrain", "pyramid_down_stairs_terrain", "pyramid_shallow_down_stairs_terrain", "pyramid_steep_down_stairs_terrain", "sloped_terrain"],
     ]
     height_field: Any = None
     name: str = "default"  # name to store and reuse the terrain
@@ -1141,14 +1141,18 @@ class Terrain(Morph):
             "pyramid_sloped_terrain",
             "pyramid_down_sloped_terrain",
             "discrete_obstacles_terrain",
+            "shallow_discrete_obstacles_terrain",
             "wave_terrain",
             "stairs_terrain",
             "pyramid_stairs_terrain",
             "pyramid_down_stairs_terrain",
+            "pyramid_shallow_down_stairs_terrain",
             "pyramid_steep_down_stairs_terrain",
             "stepping_stones_terrain",
             "stamble_terrain",
             "blocky_terrain",
+            "shallow_stamble_terrain",
+            "shallow_blocky_terrain",
             "debug_terrain"
         ]
 
@@ -1213,6 +1217,12 @@ class Terrain(Morph):
                 "max_size": 5.0,
                 "num_rects": 20,
             },
+            "shallow_discrete_obstacles_terrain": {
+                "max_height": 0.05,
+                "min_size": 1.0,
+                "max_size": 5.0,
+                "num_rects": 20,
+            },
             "wave_terrain": {
                 "num_waves": 2.0,
                 "amplitude": 0.1,
@@ -1222,6 +1232,34 @@ class Terrain(Morph):
                 "step_height": -0.1,
             },
             "pyramid_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_down_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_shallow_down_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_down_sloped_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "stamble_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "blocky_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "shallow_stamble_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "shallow_blocky_terrain": {
                 "step_width": 0.75,
                 "step_height": -0.1,
             },
