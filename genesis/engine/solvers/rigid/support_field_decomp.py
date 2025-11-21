@@ -1,9 +1,8 @@
+import math
 from typing import TYPE_CHECKING
-from math import pi
-from dataclasses import dataclass
 
-import numpy as np
 import gstaichi as ti
+import numpy as np
 
 import genesis as gs
 import genesis.utils.geom as gu
@@ -13,31 +12,18 @@ if TYPE_CHECKING:
     from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 
 
-@ti.data_oriented
 class SupportField:
-    # @dataclass(frozen=True)
-    # class SupportFieldStaticConfig:
-    #     # store static arguments here
-    #     support_res: int = 180  # resolution of the support field
-
-    @ti.data_oriented
-    class SupportFieldStaticConfig:
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
     def __init__(self, rigid_solver: "RigidSolver") -> None:
         self.solver = rigid_solver
-        self._support_field_static_config = SupportField.SupportFieldStaticConfig(
-            support_res=180,
-        )
+
+        self._support_res = 180
         if self.solver._enable_collision:
             self._compute_support()
 
     def _get_direction_grid(self):
-        support_res = self._support_field_static_config.support_res
-        theta = np.arange(support_res) / support_res * 2 * pi - pi
-        phi = np.arange(support_res) / support_res * pi
+        support_res = self._support_res
+        theta = np.arange(support_res) / support_res * 2 * math.pi - math.pi
+        phi = np.arange(support_res) / support_res * math.pi
 
         spherical_coords = np.zeros([support_res, support_res, 2])
         spherical_coords[:, :, 0] = theta[:, None]
@@ -52,18 +38,19 @@ class SupportField:
     def _compute_support(self) -> None:
         v = self._get_direction_grid()
         v1 = v.reshape([-1, 3])
+        num_v = len(v1)
+
         support_v = []
         support_vid = []
         support_cell_start = []
         start = 0
         if self.solver.n_geoms > 0:
             init_pos = self.solver.verts_info.init_pos.to_numpy()
+            geoms_vert_start = self.solver.geoms_info.vert_start.to_numpy()
+            geoms_vert_end = self.solver.geoms_info.vert_end.to_numpy()
             for i_g in range(self.solver.n_geoms):
-                vert_start = self.solver.geoms_info.vert_start[i_g]
-                vert_end = self.solver.geoms_info.vert_end[i_g]
-                this_pos = init_pos[vert_start:vert_end]
+                this_pos = init_pos[geoms_vert_start[i_g] : geoms_vert_end[i_g]]
 
-                num_v = v1.shape[0]
                 window_size = int(5e8 // this_pos.shape[0])
                 max_indices = np.empty(num_v, dtype=np.intp)
 
@@ -88,11 +75,12 @@ class SupportField:
             support_cell_start = np.zeros([1], dtype=gs.np_int)
 
         n_support_cells = start
-        self._support_field_info = array_class.get_support_field_info(self.solver.n_geoms, n_support_cells)
+        self._support_field_info = array_class.get_support_field_info(
+            self.solver.n_geoms, n_support_cells, support_res=self._support_res
+        )
 
         _kernel_init_support(
             self.solver._static_rigid_sim_config,
-            self.solver._static_rigid_sim_cache_key,
             self._support_field_info,
             support_cell_start,
             support_v,
@@ -103,7 +91,6 @@ class SupportField:
 @ti.kernel
 def _kernel_init_support(
     static_rigid_sim_config: ti.template(),
-    static_rigid_sim_cache_key: array_class.StaticRigidSimCacheKey,
     support_field_info: array_class.SupportFieldInfo,
     support_cell_start: ti.types.ndarray(),
     support_v: ti.types.ndarray(),
@@ -112,10 +99,11 @@ def _kernel_init_support(
     n_geoms = support_field_info.support_cell_start.shape[0]
     n_support_cells = support_field_info.support_v.shape[0]
 
-    ti.loop_config(serialize=static_rigid_sim_config.para_level < gs.PARA_LEVEL.PARTIAL)
+    ti.loop_config(serialize=ti.static(static_rigid_sim_config.para_level < gs.PARA_LEVEL.PARTIAL))
     for i in range(n_geoms):
         support_field_info.support_cell_start[i] = support_cell_start[i]
 
+    ti.loop_config(serialize=ti.static(static_rigid_sim_config.para_level < gs.PARA_LEVEL.PARTIAL))
     for i in range(n_support_cells):
         support_field_info.support_vid[i] = support_vid[i]
         for j in ti.static(range(3)):
@@ -127,7 +115,6 @@ def _func_support_world(
     geoms_state: array_class.GeomsState,
     geoms_info: array_class.GeomsInfo,
     support_field_info: array_class.SupportFieldInfo,
-    support_field_static_config: ti.template(),
     d,
     i_g,
     i_b,
@@ -139,31 +126,26 @@ def _func_support_world(
     g_pos = geoms_state.pos[i_g, i_b]
     g_quat = geoms_state.quat[i_g, i_b]
     d_mesh = gu.ti_transform_by_quat(d, gu.ti_inv_quat(g_quat))
-    v, vid = _func_support_mesh(support_field_info, support_field_static_config, d_mesh, i_g)
-    v_ = gu.ti_transform_by_trans_quat(v, g_pos, g_quat)
-    return v_, vid
+    v_, vid = _func_support_mesh(support_field_info, d_mesh, i_g)
+    v = gu.ti_transform_by_trans_quat(v_, g_pos, g_quat)
+    return v, v_, vid
 
 
 @ti.func
-def _func_support_mesh(
-    support_field_info: array_class.SupportFieldInfo,
-    support_field_static_config: ti.template(),
-    d_mesh,
-    i_g,
-):
+def _func_support_mesh(support_field_info: array_class.SupportFieldInfo, d_mesh, i_g):
     """
     support point at mesh frame coordinate.
     """
     theta = ti.atan2(d_mesh[1], d_mesh[0])  # [-pi, pi]
     phi = ti.acos(d_mesh[2])  # [0, pi]
 
-    support_res = gs.ti_int(support_field_static_config.support_res)
+    support_res = support_field_info.support_res[None]
     dot_max = gs.ti_float(-1e20)
     v = ti.Vector([0.0, 0.0, 0.0], dt=gs.ti_float)
     vid = 0
 
-    ii = (theta + pi) / pi / 2 * support_res
-    jj = phi / pi * support_res
+    ii = (theta + math.pi) / math.pi / 2 * support_res
+    jj = phi / math.pi * support_res
 
     for i4 in range(4):
         i, j = gs.ti_int(0), gs.ti_int(0)
@@ -207,10 +189,18 @@ def _func_support_sphere(
     sphere_radius = geoms_info.data[i_g][0]
 
     # Shrink the sphere to a point
-    res = sphere_center
+    v = sphere_center
+    v_ = ti.Vector.zero(gs.ti_float, 3)
+    vid = -1
     if not shrink:
-        res += d * sphere_radius
-    return res
+        v += d * sphere_radius
+
+        # Local position of the support point
+        g_quat = geoms_state.quat[i_g, i_b]
+        local_d = gu.ti_inv_transform_by_quat(d, g_quat)
+        v_ = local_d * sphere_radius
+
+    return v, v_, vid
 
 
 @ti.func
@@ -308,7 +298,7 @@ def _func_support_box(
     vid = (v_[0] > 0.0) * 1 + (v_[1] > 0.0) * 2 + (v_[2] > 0.0) * 4
     vid += geoms_info.vert_start[i_g]
     v = gu.ti_transform_by_trans_quat(v_, g_pos, g_quat)
-    return v, vid
+    return v, v_, vid
 
 
 @ti.func
@@ -316,7 +306,6 @@ def _func_count_supports_world(
     geoms_state: array_class.GeomsState,
     geoms_info: array_class.GeomsInfo,
     support_field_info: array_class.SupportFieldInfo,
-    support_field_static_config: ti.template(),
     d,
     i_g,
     i_b,
@@ -325,9 +314,7 @@ def _func_count_supports_world(
     Count the number of valid support points for the given world direction.
     """
     d_mesh = gu.ti_transform_by_quat(d, gu.ti_inv_quat(geoms_state.quat[i_g, i_b]))
-    return _func_count_supports_mesh(
-        geoms_state, geoms_info, support_field_info, support_field_static_config, d_mesh, i_g
-    )
+    return _func_count_supports_mesh(geoms_state, geoms_info, support_field_info, d_mesh, i_g)
 
 
 @ti.func
@@ -335,7 +322,6 @@ def _func_count_supports_mesh(
     geoms_state: array_class.GeomsState,
     geoms_info: array_class.GeomsInfo,
     support_field_info: array_class.SupportFieldInfo,
-    support_field_static_config: ti.template(),
     d_mesh,
     i_g,
 ):
@@ -345,11 +331,11 @@ def _func_count_supports_mesh(
     theta = ti.atan2(d_mesh[1], d_mesh[0])  # [-pi, pi]
     phi = ti.acos(d_mesh[2])  # [0, pi]
 
-    support_res = gs.ti_int(support_field_static_config.support_res)
+    support_res = support_field_info.support_res[None]
     dot_max = gs.ti_float(-1e20)
 
-    ii = (theta + pi) / pi / 2 * support_res
-    jj = phi / pi * support_res
+    ii = (theta + math.pi) / math.pi / 2 * support_res
+    jj = phi / math.pi * support_res
 
     count = gs.ti_int(0)
     for i4 in range(4):

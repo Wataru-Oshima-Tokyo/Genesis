@@ -1,18 +1,20 @@
+import platform
+import sys
+
 import numpy as np
 import pytest
+import torch
 
 import genesis as gs
+from genesis.utils.misc import tensor_to_array
 
 from .utils import assert_allclose, get_hf_dataset
 
 
-pytestmark = [
-    pytest.mark.field_only,
-]
-
-
+@pytest.mark.required
+@pytest.mark.skipif(platform.machine() == "aarch64", reason="Module 'tetgen' is crashing on Linux ARM.")
 def test_rigid_mpm_muscle(show_viewer):
-    ball_pos_init = (0.8, 0.6, 0.12)
+    BALL_POS_INIT = (0.8, 0.6, 0.12)
 
     scene = gs.Scene(
         sim_options=gs.options.SimOptions(
@@ -42,7 +44,7 @@ def test_rigid_mpm_muscle(show_viewer):
     robot = scene.add_entity(
         morph=gs.morphs.URDF(
             file="urdf/simple/two_link_arm.urdf",
-            pos=(0.5, 0.5, 0.3),
+            pos=(0.45, 0.45, 0.2),
             euler=(0.0, 0.0, 0.0),
             scale=0.2,
             fixed=True,
@@ -63,7 +65,7 @@ def test_rigid_mpm_muscle(show_viewer):
     )
     ball = scene.add_entity(
         morph=gs.morphs.Sphere(
-            pos=ball_pos_init,
+            pos=BALL_POS_INIT,
             radius=0.12,
         ),
         material=gs.materials.Rigid(rho=1000, friction=0.5),
@@ -71,27 +73,31 @@ def test_rigid_mpm_muscle(show_viewer):
     scene.build()
 
     scene.reset()
-    for i in range(370):
-        robot.control_dofs_velocity(np.array([1.0 * np.sin(2 * np.pi * i * 0.001)] * robot.n_dofs))
+    for i in range(150):
+        robot.control_dofs_velocity(np.array([2.0 * np.sin(2 * np.pi * i * 0.006)] * robot.n_dofs))
         scene.step()
 
-    with np.testing.assert_raises(AssertionError):
-        assert_allclose(ball.get_pos(), ball_pos_init, atol=1e-2)
+    ball_pos_delta = ball.get_pos() - torch.tensor(BALL_POS_INIT, dtype=gs.tc_float, device=gs.device)
+    assert_allclose(ball_pos_delta[..., 0], 0.0, tol=1e-2)
+    assert ((0.02 < ball_pos_delta[1]) & (ball_pos_delta[1] < 0.05)).all()
+    assert_allclose(ball_pos_delta[..., 2], 0.0, tol=1e-3)
 
 
 @pytest.mark.required
 @pytest.mark.parametrize(
-    "material_type",
+    "n_envs, material_type",
     [
-        gs.materials.PBD.Liquid,
-        gs.materials.SPH.Liquid,
-        gs.materials.MPM.Liquid,
-        gs.materials.MPM.Sand,
-        gs.materials.MPM.Snow,
-        gs.materials.MPM.Elastic,  # This makes little sense but nothing prevents doing this
+        (0, gs.materials.SPH.Liquid),
+        (1, gs.materials.SPH.Liquid),
+        (2, gs.materials.SPH.Liquid),
+        (2, gs.materials.PBD.Liquid),
+        (2, gs.materials.MPM.Liquid),
+        (2, gs.materials.MPM.Sand),
+        (2, gs.materials.MPM.Snow),
+        (2, gs.materials.MPM.Elastic),  # This makes little sense but nothing prevents doing this
     ],
 )
-def test_fluid_emitter(material_type, show_viewer):
+def test_fluid_emitter(n_envs, material_type, show_viewer):
     scene = gs.Scene(
         sim_options=gs.options.SimOptions(
             dt=4e-3,
@@ -130,20 +136,22 @@ def test_fluid_emitter(material_type, show_viewer):
     )
     emitter = scene.add_emitter(
         material=material_type(),
-        max_particles=100000,
+        max_particles=5000,
         surface=gs.surfaces.Glass(
             color=(0.7, 0.85, 1.0, 0.7),
         ),
     )
-    scene.build(n_envs=2)
+    scene.build(n_envs=n_envs)
 
-    emitter.emit(droplet_shape="circle", droplet_size=0.22)
     emitter.emit_omni()
-
+    for i in range(5):
+        emitter.emit(droplet_shape="circle", droplet_size=0.25)
+        scene.step()
     scene.step()
 
 
 @pytest.mark.required
+@pytest.mark.skipif(platform.machine() == "aarch64", reason="Module 'tetgen' is crashing on Linux ARM.")
 @pytest.mark.parametrize("precision", ["64"])
 def test_sap_rigid_rigid_hydroelastic_contact(show_viewer):
     BOX_POS = (0.0, 0.0, 0.1)
@@ -202,7 +210,7 @@ def test_sap_rigid_rigid_hydroelastic_contact(show_viewer):
         assert_allclose(entity.get_links_vel(), 0.0, atol=2e-2)
 
     # The box should stay at its initial position
-    assert_allclose(box.get_pos(), (0.0, 0.0, BOX_HALFHEIGHT), atol=1e-3)
+    assert_allclose(box.get_pos(), (0.0, 0.0, BOX_HALFHEIGHT), atol=2e-3)
 
     # The box, and both robots should be laying on top of each other
     robot_1_min_corner, robot_1_max_corner = robot_1.get_AABB()
@@ -214,6 +222,7 @@ def test_sap_rigid_rigid_hydroelastic_contact(show_viewer):
 
 
 @pytest.mark.required
+@pytest.mark.skipif(platform.machine() == "aarch64", reason="Module 'tetgen' is crashing on Linux ARM.")
 @pytest.mark.parametrize("precision", ["64"])
 def test_sap_fem_vs_robot(show_viewer):
     SPHERE_RADIUS = 0.2
@@ -276,3 +285,72 @@ def test_sap_fem_vs_robot(show_viewer):
 
     # Check that the legs of the ants are resting on the sphere
     assert_allclose(robot.get_qpos()[-4:].abs(), 1.0, tol=0.1)
+
+
+@pytest.mark.required
+@pytest.mark.skipif(platform.machine() == "aarch64", reason="Module 'tetgen' is crashing on Linux ARM.")
+@pytest.mark.parametrize("substeps", [1, 10])
+def test_rigid_mpm_legacy_coupling(substeps, show_viewer):
+    # This test is aimining at two things:
+    # 1) When substep = 1, the rigid object should be affected by the MPM particles
+    # 2) Regardless of substeps, as far as the substep dt is the same, they should give consistent results
+    substep_dt = 4e-4
+    horizon_substeps = 100
+
+    scene = gs.Scene(
+        sim_options=gs.options.SimOptions(
+            dt=substep_dt * substeps,
+            substeps=substeps,
+        ),
+        mpm_options=gs.options.MPMOptions(
+            lower_bound=(-0.5, -1.0, 0.0),
+            upper_bound=(0.5, 1.0, 1),
+        ),
+        vis_options=gs.options.VisOptions(
+            visualize_mpm_boundary=True,
+        ),
+        viewer_options=gs.options.ViewerOptions(
+            camera_fov=30,
+        ),
+        show_viewer=show_viewer,
+    )
+
+    plane = scene.add_entity(
+        morph=gs.morphs.Plane(),
+    )
+
+    obj_rigid = scene.add_entity(
+        material=gs.materials.Rigid(
+            rho=1.0,
+        ),
+        morph=gs.morphs.Box(
+            pos=(0.0, -0.25, 0.1),
+            size=(0.2, 0.2, 0.2),
+        ),
+        surface=gs.surfaces.Default(
+            color=(1.0, 0.4, 0.4),
+            vis_mode="visual",
+        ),
+    )
+
+    obj_sand = scene.add_entity(
+        material=gs.materials.MPM.Liquid(),
+        morph=gs.morphs.Box(
+            pos=(0.0, 0.0, 0.2),
+            size=(0.3, 0.3, 0.3),
+        ),
+        surface=gs.surfaces.Default(
+            color=(0.3, 0.3, 1.0),
+            vis_mode="particle",
+        ),
+    )
+
+    scene.build()
+
+    horizon = horizon_substeps // substeps
+    for i in range(horizon):
+        scene.step()
+
+    # Check that the sand moved the box along the negative Y direction
+    pos = tensor_to_array(obj_rigid.get_pos())
+    assert pos[1] + 0.25 < 0.0

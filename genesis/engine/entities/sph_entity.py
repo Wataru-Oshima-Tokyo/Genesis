@@ -48,24 +48,21 @@ class SPHEntity(ParticleEntity):
         """
         self.sampler = self._material.sampler
 
-        valid = True
-        if self.sampler == "regular":
-            pass
-        elif "pbs" in self.sampler:
-            splits = self.sampler.split("-")
-            if len(splits) == 1:  # using default sdf_res=32
-                self.sampler += "-32"
-            elif len(splits) == 2 and splits[0] == "pbs" and splits[1].isnumeric():
+        match self.sampler.split("-"):
+            case ["regular"]:
                 pass
-            else:
-                valid = False
-        else:
-            valid = False
-
-        if not valid:
-            gs.raise_exception(
-                f"Only one of the following samplers is supported: [`regular`, `pbs`, `pbs-sdf_res`]. Got: {self.sampler}."
-            )
+            case ["random"]:
+                pass
+            case ["pbs"]:
+                # using default sdf_res=32
+                self.sampler += "-32"
+            case ["pbs", num] if num.isnumeric():
+                pass
+            case _:
+                gs.raise_exception(
+                    "Only one of the following samplers is supported: [`regular`, `random`, `pbs`, `pbs-sdf_res`]. "
+                    f"Got: {self.sampler}."
+                )
 
     def _add_particles_to_solver(self):
         self._solver._kernel_add_particles(
@@ -186,3 +183,11 @@ class SPHEntity(ParticleEntity):
         if self._scene.n_envs == 0:
             actives = actives.squeeze(0)
         return actives
+
+    def get_particles_pos(self, envs_idx=None, *, unsafe=False):
+        envs_idx = self._scene._sanitize_envs_idx(envs_idx, unsafe=unsafe)
+        poss = torch.empty((len(envs_idx), self.n_particles, 3), dtype=gs.tc_float, device=gs.device)
+        self.solver._kernel_get_particles_pos(self._particle_start, self.n_particles, envs_idx, poss)
+        if self._scene.n_envs == 0:
+            poss = poss.squeeze(0)
+        return poss

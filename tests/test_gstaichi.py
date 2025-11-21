@@ -5,7 +5,6 @@ import pathlib
 import subprocess
 import sys
 
-import gstaichi as ti
 import pytest
 import numpy as np
 
@@ -35,7 +34,7 @@ def _initialize_genesis(backend: gs.constants.backend | str):
         sys.exit(RET_SKIP)
 
     # Skip test if gstaichi ndarray mode is enabled but not supported by this specific test
-    if sys.platform == "darwin" and backend != gs.cpu and os.environ.get("GS_USE_NDARRAY") == "1":
+    if sys.platform == "darwin" and backend != gs.cpu and os.environ.get("GS_ENABLE_NDARRAY") == "1":
         print(
             "Using gstaichi ndarray on Mac OS with gpu backend is unreliable, because Apple Metal only supports up to "
             "31 kernel parameters, which is not enough for most solvers.",
@@ -91,6 +90,8 @@ def test_to_torch(ti_type_spec, batch_shape, arg_shape):
 
 
 def gs_static_child(args: list[str]):
+    import gstaichi as ti
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", type=str, choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--enable-multi-contact", action="store_true")
@@ -123,7 +124,7 @@ def gs_static_child(args: list[str]):
     scene.build()
 
     scene.rigid_solver.collider.detection()
-    gs.ti.sync()
+    ti.sync()
     actual_contacts = scene.rigid_solver.collider._collider_state.n_contacts.to_numpy()
     assert actual_contacts == args.expected_num_contacts
     from genesis.engine.solvers.rigid.collider_decomp import func_narrow_phase_convex_vs_convex
@@ -145,22 +146,11 @@ def gs_static_child(args: list[str]):
 
 
 @pytest.mark.required
-# Disable genesis initialization at worker level
-@pytest.mark.parametrize("backend", [None])
-# should not affect expected_num_contacts
-@pytest.mark.parametrize("use_ndarray", [False, True])
-# should not affect expected_num_contacts
-# note that using `backend` instead of `test_backend`, breaks genesis pytest...
+@pytest.mark.parametrize("backend", [None])  # Disable genesis initialization at worker level
 @pytest.mark.parametrize("test_backend", ["cpu", "gpu"])
-# should not affect expected_num_contacts
+@pytest.mark.parametrize("use_ndarray", [False, True])
 @pytest.mark.parametrize("enable_pure", [False, True])
-@pytest.mark.parametrize(
-    "enable_multicontact, expected_num_contacts",
-    [
-        (False, 1),
-        (True, 4),
-    ],
-)
+@pytest.mark.parametrize("enable_multicontact, expected_num_contacts", [(False, 1), (True, 4)])
 def test_static(
     enable_multicontact: bool,
     expected_num_contacts: int,
@@ -188,13 +178,14 @@ def test_static(
         if enable_multicontact:
             cmd_line += ["--enable-multi-contact"]
         env_changes = {}
-        env_changes["GS_BETA_PURE"] = "1" if enable_pure else "0"
+        env_changes["GS_ENABLE_FASTCACHE"] = "1" if enable_pure else "0"
+        env_changes["GS_ENABLE_NDARRAY"] = "1" if use_ndarray else "0"
+        env_changes["TI_OFFLINE_CACHE"] = "1"
         env_changes["TI_OFFLINE_CACHE_FILE_PATH"] = str(tmp_path)
-        env_changes["GS_USE_NDARRAY"] = "1" if use_ndarray else "0"
         env = dict(os.environ)
         env.update(env_changes)
 
-        proc = subprocess.run(cmd_line, capture_output=True, text=True, env=env, cwd=MODULE_ROOT_DIR)
+        proc = subprocess.run(cmd_line, capture_output=True, text=True, encoding="utf-8", env=env, cwd=MODULE_ROOT_DIR)
         if proc.returncode == RET_SKIP:
             pytest.skip(proc.stderr)
         elif proc.returncode != RET_SUCCESS:
@@ -209,6 +200,8 @@ def test_static(
 
 
 def gs_num_envs_child(args: list[str]):
+    import gstaichi as ti
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", type=str, choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--n_envs", type=int, required=True)
@@ -234,7 +227,7 @@ def gs_num_envs_child(args: list[str]):
     scene.build(n_envs=args.n_envs, env_spacing=(0.5, 0.5))
 
     scene.rigid_solver.collider.detection()
-    gs.ti.sync()
+    ti.sync()
 
     from genesis.engine.solvers.rigid.rigid_solver_decomp import kernel_step_1
 
@@ -246,11 +239,9 @@ def gs_num_envs_child(args: list[str]):
 
 
 @pytest.mark.required
-# Disable genesis initialization at worker level
-@pytest.mark.parametrize("backend", [None])
-@pytest.mark.parametrize("enable_pure", [False, True])  # should not affect result
-# Note that using `backend` instead of `test_backend`, breaks genesis pytest...
-@pytest.mark.parametrize("test_backend", ["cpu", "gpu"])  # should not affect result
+@pytest.mark.parametrize("backend", [None])  # Disable genesis initialization at worker level
+@pytest.mark.parametrize("test_backend", ["cpu", "gpu"])
+@pytest.mark.parametrize("enable_pure", [False, True])
 @pytest.mark.parametrize("use_ndarray", [False, True])
 def test_num_envs(use_ndarray: bool, enable_pure: bool, test_backend: str, tmp_path: pathlib.Path) -> None:
     # Change n_envs each time, and check effect on reading from cache
@@ -266,8 +257,9 @@ def test_num_envs(use_ndarray: bool, enable_pure: bool, test_backend: str, tmp_p
             str(n_envs),
         ]
         env = dict(os.environ)
-        env["GS_BETA_PURE"] = "1" if enable_pure else "0"
-        env["GS_USE_NDARRAY"] = "1" if use_ndarray else "0"
+        env["GS_ENABLE_FASTCACHE"] = "1" if enable_pure else "0"
+        env["GS_ENABLE_NDARRAY"] = "1" if use_ndarray else "0"
+        env["TI_OFFLINE_CACHE"] = "1"
         env["TI_OFFLINE_CACHE_FILE_PATH"] = str(tmp_path)
         # notes:
         # - if we use pure, we won't get as far as fe-ll-cache
@@ -285,7 +277,7 @@ def test_num_envs(use_ndarray: bool, enable_pure: bool, test_backend: str, tmp_p
             cmd_line += ["--expected-use-src-ll-cache"]
         if expected_src_ll_cache_hit:
             cmd_line += ["--expected-src-ll-cache-hit"]
-        proc = subprocess.run(cmd_line, capture_output=True, text=True, env=env, cwd=MODULE_ROOT_DIR)
+        proc = subprocess.run(cmd_line, capture_output=True, text=True, encoding="utf-8", env=env, cwd=MODULE_ROOT_DIR)
         if proc.returncode == RET_SKIP:
             pytest.skip(proc.stderr)
         elif proc.returncode != RET_SUCCESS:
@@ -299,8 +291,6 @@ def test_num_envs(use_ndarray: bool, enable_pure: bool, test_backend: str, tmp_p
 
 
 def change_scene(args: list[str]):
-    from genesis.engine.solvers.rigid.rigid_solver_decomp import kernel_step_1
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", type=str, choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--n_objs", type=int, required=True)
@@ -346,6 +336,8 @@ def change_scene(args: list[str]):
     z = qpos.reshape((*qpos.shape[:-1], args.n_objs, 7))[..., 2]
     assert_allclose(z, 0.2, atol=1e-2, err_msg=f"zs {z} is not close to 0.2.")
 
+    from genesis.engine.solvers.rigid.rigid_solver_decomp import kernel_step_1
+
     assert kernel_step_1._primal.src_ll_cache_observations.cache_validated == args.expected_src_ll_cache_hit
     assert kernel_step_1._primal.src_ll_cache_observations.cache_loaded == args.expected_src_ll_cache_hit
 
@@ -353,18 +345,17 @@ def change_scene(args: list[str]):
 
 
 @pytest.mark.required
-# Disable genesis initialization at worker level
-@pytest.mark.parametrize("backend", [None])
+@pytest.mark.parametrize("backend", [None])  # Disable genesis initialization at worker level
+# Note that, on GPU, PARA_LEVEL is changing between batched and non-batched simulation
 @pytest.mark.parametrize(
-    "list_n_objs_n_envs",
+    "test_backend, list_n_objs_n_envs",
     [
-        [(1, 1), (2, 2), (3, 3)],
-        # [(3, 0), (1, 1), (2, 2)],  # FIXME: This does not work with gpu, needs to investigate (cache key changes).
+        ("gpu", [(1, 0), (2, 1)]),
+        ("gpu", [(2, 2), (3, 3)]),
+        ("cpu", [(1, 0), (2, 1), (2, 2), (3, 3)]),
     ],
 )
-@pytest.mark.parametrize("enable_pure", [True])  # should not affect result
-# note that using `backend` instead of `test_backend`, breaks genesis pytest...
-@pytest.mark.parametrize("test_backend", ["cpu", "gpu"])  # should not affect result
+@pytest.mark.parametrize("enable_pure", [True])
 def test_ndarray_no_compile(
     enable_pure: bool, list_n_objs_n_envs: list[tuple[int, int]], test_backend: str, tmp_path: pathlib.Path
 ) -> None:
@@ -385,10 +376,11 @@ def test_ndarray_no_compile(
             test_backend,
         ]
         env = dict(os.environ)
-        env["GS_BETA_PURE"] = "1" if enable_pure else "0"
-        env["GS_USE_NDARRAY"] = "1"
+        env["GS_ENABLE_FASTCACHE"] = "1" if enable_pure else "0"
+        env["GS_ENABLE_NDARRAY"] = "1"
+        env["TI_OFFLINE_CACHE"] = "1"
         env["TI_OFFLINE_CACHE_FILE_PATH"] = str(tmp_path)
-        proc = subprocess.run(cmd_line, capture_output=True, text=True, env=env, cwd=MODULE_ROOT_DIR)
+        proc = subprocess.run(cmd_line, capture_output=True, text=True, encoding="utf-8", env=env, cwd=MODULE_ROOT_DIR)
 
         # Display error message only in case of failure
         if proc.returncode == RET_SKIP:

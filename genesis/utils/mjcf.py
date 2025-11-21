@@ -44,9 +44,23 @@ def build_model(xml, discard_visual, default_armature=None, merge_fixed_links=Fa
         # Detect whether it is a URDF file or a Mujoco MJCF file
         root = xml.getroot()
         is_urdf_file = root.tag == "robot"
+        mjcf = ET.SubElement(root, "mujoco") if is_urdf_file else root
+
+        # Parse all included sub-models recursively
+        root_parent_stack = [(mjcf, Path(""))]
+        while root_parent_stack:
+            xml_root, parent_path = root_parent_stack.pop()
+            for elem in tuple(xml_root.findall("include")):
+                include_path = parent_path / elem.attrib["file"]
+                include_root = ET.parse(Path(asset_path) / include_path).getroot()
+                for include_elem in include_root.findall(".//mesh"):
+                    include_elem.attrib["file"] = str(include_path.parent / include_elem.attrib["file"])
+                for child in include_root:
+                    mjcf.append(child)
+                mjcf.remove(elem)
+                root_parent_stack.append((include_root, include_path))
 
         # Make sure compiler options are defined
-        mjcf = ET.SubElement(root, "mujoco") if is_urdf_file else root
         compiler = mjcf.find("compiler")
         if compiler is None:
             compiler = ET.SubElement(mjcf, "compiler")
@@ -107,7 +121,9 @@ def build_model(xml, discard_visual, default_armature=None, merge_fixed_links=Fa
                 mesh_path = elem.get("filename")
                 if mesh_path.startswith("package://"):
                     mesh_path = mesh_path[10:]
-                elem.set("filename", os.path.abspath(os.path.join(asset_path, mesh_path)))
+                # Beware symlinks must NOT be resolved, otherwise it may break the file extension, which is used by
+                # Mujoco MJCF parser to determine how to load mesh files.
+                elem.set("filename", str(Path(asset_path) / mesh_path))
 
         with open(os.devnull, "w") as stderr, redirect_libc_stderr(stderr):
             # Parse updated URDF file as a string
@@ -136,7 +152,7 @@ def build_model(xml, discard_visual, default_armature=None, merge_fixed_links=Fa
     elif isinstance(xml, mujoco.MjModel):
         mj = xml
     else:
-        raise gs.raise_exception(f"'{xml}' is not a valid MJCF file.")
+        raise gs.raise_exception(f"'{xml}' is not a valid MJCF or URDF file.")
 
     return mj
 
@@ -661,20 +677,14 @@ def parse_geoms(mj, scale, surface, xml_path):
 
     # Parse geometry group if available
     for link_g_info in links_g_info:
-        has_visual_group = any(g_info["group"] > 0 for g_info in link_g_info)
         for g_info in link_g_info.copy():
-            # Duplicate collision geometries as visual in accordance with Mujoco logics
-            create_visual = False
-            if g_info["contype"] or g_info["conaffinity"]:
-                if has_visual_group:
-                    # If groups are defined, only create visual for geoms in visual groups (1 or 2)
-                    create_visual = g_info["group"] in (1, 2)
-                else:
-                    # If no groups defined, always create visual duplicates for collision geoms.
-                    # This handles the case where we have a mix of collision and non-collision geoms.
-                    create_visual = True
+            # Skip visual geometries
+            if not (g_info["contype"] or g_info["conaffinity"]):
+                continue
 
-            if create_visual:
+            # Duplicate collision geometries as visual in accordance with Mujoco logics:
+            # If groups are defined, only create visual for geoms in visual groups (0, 1 or 2).
+            if g_info["group"] in (0, 1, 2):
                 g_info = g_info.copy()
                 mesh = g_info.pop("mesh")
                 vmesh = gs.Mesh(

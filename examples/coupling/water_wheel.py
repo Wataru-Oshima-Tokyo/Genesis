@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import numpy as np
 
@@ -13,7 +14,7 @@ def main():
     args = parser.parse_args()
 
     ########################## init ##########################
-    gs.init(seed=0, precision="32", logging_level="debug")
+    gs.init(precision="32", logging_level="info")
 
     ########################## create a scene ##########################
     scene = gs.Scene(
@@ -66,7 +67,7 @@ def main():
     )
     scene.build(n_envs=2)
 
-    horizon = 500
+    horizon = 500 if "PYTEST_VERSION" not in os.environ else 5
     for i in range(horizon):
         emitter.emit(
             pos=np.array([0.5, 1.0, 3.5]),

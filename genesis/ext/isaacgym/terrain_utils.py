@@ -178,16 +178,9 @@ def discrete_obstacles_terrain(terrain, slope=-0.5, pit_size_m=0.2, pit_gap_m=0.
     pit_half = pit_size // 2
     pit_depth = int(pit_depth_m / terrain.vertical_scale)
 
-    # Generate pyramid slope
-    x = np.arange(0, terrain.width)
-    y = np.arange(0, terrain.length)
-    xx, yy = np.meshgrid(x, y, sparse=True)
-    xx = (center_x - np.abs(center_x - xx)) / center_x
-    yy = (center_y - np.abs(center_y - yy)) / center_y
-    xx = xx.reshape(terrain.width, 1)
-    yy = yy.reshape(1, terrain.length)
-    max_height = int(slope * (terrain.horizontal_scale / terrain.vertical_scale) * (terrain.width / 2))
-    terrain.height_field_raw[:, :] = (max_height * xx * yy).astype(terrain.height_field_raw.dtype)
+    start_x, end_x = (terrain.width - platform_size) // 2, (terrain.width + platform_size) // 2
+    start_y, end_y = (terrain.length - platform_size) // 2, (terrain.length + platform_size) // 2
+    terrain.height_field_raw[start_x:end_x, start_y:end_y] = 0
 
     # Flatten the center platform
     half_platform = platform_size // 2

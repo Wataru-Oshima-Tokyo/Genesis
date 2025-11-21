@@ -3,12 +3,14 @@ from typing import TYPE_CHECKING
 import gstaichi as ti
 import numpy as np
 import torch
+import trimesh
 from numpy.typing import ArrayLike
 
 import genesis as gs
-import trimesh
 from genesis.repr_base import RBC
 from genesis.utils import geom as gu
+
+from genesis.utils.misc import DeprecationError
 
 from .rigid_geom import RigidGeom, RigidVisGeom, _kernel_get_free_verts, _kernel_get_fixed_verts
 
@@ -18,7 +20,6 @@ if TYPE_CHECKING:
     from genesis.ext.pyrender.interaction.vec3 import Pose
 
 
-@ti.data_oriented
 class RigidLink(RBC):
     """
     RigidLink class. One RigidEntity consists of multiple RigidLinks, each of which is a rigid body and could consist of multiple RigidGeoms (`link.geoms`, for collision) and RigidVisGeoms (`link.vgeoms` for visualization).
@@ -36,7 +37,8 @@ class RigidLink(RBC):
         vert_start: int,
         face_start: int,
         edge_start: int,
-        verts_state_start: int,
+        free_verts_state_start: int,
+        fixed_verts_state_start: int,
         vgeom_start: int,
         vvert_start: int,
         vface_start: int,
@@ -59,9 +61,28 @@ class RigidLink(RBC):
         self._uid = gs.UID()
         self._idx: int = idx
         self._parent_idx: int = parent_idx  # -1 if no parent
-        self._root_idx: int | None = root_idx  # None if no root
         self._child_idxs: list[int] = list()
-        self._invweight: float | None = invweight
+
+        # 'is_fixed' attribute specifies whether the link is free to move.
+        # In practice, this attributes determines whether the geometry vertices associated with the entity are stored
+        # per batch-element and updated at every simulation step, or computed once at build time and shared among the
+        # entire batch. This affects correct processing of collision detection and sensor raycasting as a side-effect.
+        is_fixed = True
+        link = self
+        while True:
+            is_fixed &= all(joint.type is gs.JOINT_TYPE.FIXED for joint in link.joints)
+            if link.parent_idx == -1:
+                break
+            link = self.entity.links[link.parent_idx - self.entity.link_start]
+        if root_idx is None:
+            root_idx = link.idx
+        self._root_idx: int = root_idx
+        self._is_fixed: bool = is_fixed
+
+        if is_fixed and not entity._batch_fixed_verts:
+            verts_state_start = fixed_verts_state_start
+        else:
+            verts_state_start = free_verts_state_start
 
         self._joint_start: int = joint_start
         self._n_joints: int = n_joints
@@ -88,6 +109,7 @@ class RigidLink(RBC):
         self._inertial_quat: ArrayLike | None = inertial_quat
         self._inertial_mass: float | None = inertial_mass
         self._inertial_i: ArrayLike | None = inertial_i
+        self._invweight: float | None = invweight
 
         self._visualize_contact = visualize_contact
 
@@ -102,18 +124,6 @@ class RigidLink(RBC):
             vgeom._build()
 
         self._init_mesh = self._compose_init_mesh()
-
-        # find root link and check if link is fixed
-        solver_links = self._solver.links
-        link = self
-        is_fixed = all(joint.type is gs.JOINT_TYPE.FIXED for joint in self.joints)
-        while link.parent_idx > -1:
-            link = solver_links[link.parent_idx]
-            if not all(joint.type is gs.JOINT_TYPE.FIXED for joint in link.joints):
-                is_fixed = False
-        if self._root_idx is None:
-            self._root_idx = gs.np_int(link.idx)
-        self.is_fixed = is_fixed
 
         # inertial_mass and inertia_i
         if self._inertial_mass is None:
@@ -166,12 +176,8 @@ class RigidLink(RBC):
         self._inertial_i = np.asarray(self._inertial_i, dtype=gs.np_float)
 
         # override invweight if fixed
-        if is_fixed:
+        if self._is_fixed:
             self._invweight = np.zeros((2,), dtype=gs.np_float)
-
-        import genesis.engine.solvers.rigid.rigid_solver_decomp as rigid_solver_decomp
-
-        self.rsd = rigid_solver_decomp
 
     def _compose_init_mesh(self):
         if len(self._geoms) == 0 and len(self._vgeoms) == 0:
@@ -299,48 +305,17 @@ class RigidLink(RBC):
         """
         Get the vertices of the link's collision body (concatenation of all `link.geoms`) in the world frame.
         """
-        self._update_verts_for_geom()
-        if self.is_free:
-            tensor = torch.empty(
-                self._solver._batch_shape((self.n_verts, 3), True), dtype=gs.tc_float, device=gs.device
-            )
+        self._solver.update_verts_for_geoms(range(self.geom_start, self.geom_end))
+
+        if self.is_fixed and not self._entity._batch_fixed_verts:
+            tensor = torch.empty((self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
+            _kernel_get_fixed_verts(tensor, self._verts_state_start, self.n_verts, self._solver.fixed_verts_state)
+        else:
+            tensor = torch.empty((self._solver._B, self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
             _kernel_get_free_verts(tensor, self._verts_state_start, self.n_verts, self._solver.free_verts_state)
             if self._solver.n_envs == 0:
                 tensor = tensor.squeeze(0)
-        else:
-            tensor = torch.empty((self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
-            _kernel_get_fixed_verts(tensor, self._verts_state_start, self.n_verts, self._solver.fixed_verts_state)
         return tensor
-
-    @gs.assert_built
-    def _update_verts_for_geom(self):
-        for i_g_ in range(self.n_geoms):
-            i_g = i_g_ + self._geom_start
-            self._solver.update_verts_for_geom(i_g)
-
-    @gs.assert_built
-    def get_vverts(self):
-        """
-        Get the vertices of the link's visualization body (concatenation of all `link.vgeoms`) in the world frame.
-        """
-        tensor = torch.empty(self._solver._batch_shape((self.n_vverts, 3), True), dtype=gs.tc_float, device=gs.device)
-        self._kernel_get_vverts(tensor)
-        if self._solver.n_envs == 0:
-            tensor = tensor.squeeze(0)
-        return tensor
-
-    @ti.kernel
-    def _kernel_get_vverts(self, tensor: ti.types.ndarray()):
-        for i_vg_, i_b in ti.ndrange(self.n_vgeoms, self._solver._B):
-            i_vg = i_vg_ + self._vgeom_start
-            for i_v in range(self._solver.vgeoms_info.vvert_start[i_vg], self._solver.vgeoms_info.vvert_end[i_vg]):
-                vvert_pos = gu.ti_transform_by_trans_quat(
-                    self._solver.vverts_info.init_pos[i_v],
-                    self._solver.vgeoms_state.pos[i_vg, i_b],
-                    self._solver.vgeoms_state.quat[i_vg, i_b],
-                )
-                for j in range(3):
-                    tensor[i_b, i_v - self._vvert_start, j] = vvert_pos[j]
 
     @gs.assert_built
     def get_AABB(self):
@@ -356,6 +331,8 @@ class RigidLink(RBC):
         """
         Set the mass of the link.
         """
+        from genesis.engine.solvers.rigid.rigid_solver_decomp import kernel_adjust_link_inertia
+
         if self.is_fixed:
             gs.logger.warning(f"Updating the mass of a link that is fixed wrt world has no effect, skipping.")
             return
@@ -369,12 +346,11 @@ class RigidLink(RBC):
             self._invweight /= ratio
         self._inertial_i *= ratio
 
-        self.rsd.kernel_adjust_link_inertia(
+        kernel_adjust_link_inertia(
             link_idx=self.idx,
             ratio=ratio,
             links_info=self._solver.links_info,
             static_rigid_sim_config=self._solver._static_rigid_sim_config,
-            static_rigid_sim_cache_key=self._solver._static_rigid_sim_cache_key,
         )
 
     @gs.assert_built
@@ -435,7 +411,7 @@ class RigidLink(RBC):
         """
         The sequence of joints that connects the link to its parent link.
         """
-        return self._solver.joints[self.joint_start : self.joint_end]
+        return self.entity.joints_by_links[self.idx_local]
 
     @property
     def n_joints(self):
@@ -466,14 +442,14 @@ class RigidLink(RBC):
     @property
     def dof_start(self):
         """The index of the link's first degree of freedom (DOF) in the scene."""
-        if len(self.joints) == 0:
+        if not self.joints:
             return -1
         return self.joints[0].dof_start
 
     @property
     def dof_end(self):
         """The index of the link's last degree of freedom (DOF) in the scene *plus one*."""
-        if len(self.joints) == 0:
+        if not self.joints:
             return -1
         return self.joints[-1].dof_end
 
@@ -485,14 +461,14 @@ class RigidLink(RBC):
     @property
     def q_start(self):
         """Returns the starting index of the `q` variables of the link in the rigid solver."""
-        if len(self.joints) == 0:
+        if not self.joints:
             return -1
         return self.joints[0].q_start
 
     @property
     def q_end(self):
         """Returns the last index of the `q` variables of the link in the rigid solver *plus one*."""
-        if len(self.joints) == 0:
+        if not self.joints:
             return -1
         return self.joints[-1].q_end
 
@@ -555,6 +531,13 @@ class RigidLink(RBC):
         Whether the link is a leaf link (i.e., has no child links).
         """
         return len(self._child_idxs) == 0
+
+    @property
+    def is_fixed(self):
+        """
+        Whether the link is fixed wrt the world.
+        """
+        return self._is_fixed
 
     @property
     def invweight(self):
@@ -714,10 +697,7 @@ class RigidLink(RBC):
 
     @property
     def is_free(self):
-        """
-        Whether the entity the link belongs to is free.
-        """
-        return self.entity.is_free
+        raise DeprecationError("This property has been removed.")
 
     @property
     def pose(self) -> "Pose":

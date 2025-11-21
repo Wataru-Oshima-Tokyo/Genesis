@@ -1,6 +1,7 @@
 import os
 import math
-import pickle
+import pickle as pkl
+from pathlib import Path
 
 import fast_simplification
 import numpy as np
@@ -9,9 +10,8 @@ import trimesh
 import genesis as gs
 from genesis.ext.isaacgym import terrain_utils as isaacgym_terrain_utils
 from genesis.options.morphs import Terrain
-import random
 
-from .misc import get_assets_dir
+from .mesh import get_gnd_path
 
 
 def parse_terrain(morph: Terrain, surface):
@@ -36,213 +36,144 @@ def parse_terrain(morph: Terrain, surface):
     height_field : np.ndarray
     """
 
-    if morph.from_stored is not None:
-        terrain_dir = os.path.join(os.path.join(get_assets_dir(), f"terrain/{morph.name}"), morph.from_stored)
-        os.makedirs(terrain_dir, exist_ok=True)
-
-        tmesh = trimesh.load(os.path.join(terrain_dir, "tmesh.stl"))
-        sdf_tmesh = trimesh.load(os.path.join(terrain_dir, "sdf_tmesh.stl"))
-        with open(os.path.join(terrain_dir, "info.pkl"), "rb") as f:
-            info = pickle.load(f)
-            morph.horizontal_scale = info["horizontal_scale"]
-            morph.vertical_scale = info["vertical_scale"]
-            heightfield = info["height_field"]
-    else:
-        if morph.height_field is not None:
-            heightfield = morph.height_field
-        else:
-            subterrain_rows = int(morph.subterrain_size[0] / morph.horizontal_scale + gs.EPS) + 1
-            subterrain_cols = int(morph.subterrain_size[1] / morph.horizontal_scale + gs.EPS) + 1
-            heightfield = np.full(
-                (
-                    morph.n_subterrains[0] * (subterrain_rows - 1) + 1,
-                    morph.n_subterrains[1] * (subterrain_cols - 1) + 1,
-                ),
-                fill_value=float("-inf"),
-                dtype=gs.np_float,
+    gnd_file_path = None
+    if morph.name is not None:
+        gnd_file_path = Path(
+            get_gnd_path(
+                morph.name,
+                morph.subterrain_types,
+                morph.subterrain_size,
+                morph.horizontal_scale,
+                morph.vertical_scale,
+                morph.n_subterrains,
             )
-
-            for i, j in zip(*map(np.ravel, np.meshgrid(*map(range, morph.n_subterrains), indexing="ij"))):
-                subterrain_type = morph.subterrain_types[i][j]
-                params = morph.subterrain_params[subterrain_type]
-
-                new_subterrain = isaacgym_terrain_utils.SubTerrain(
-                    width=subterrain_rows,
-                    length=subterrain_cols,
-                    vertical_scale=morph.vertical_scale,
-                    horizontal_scale=morph.horizontal_scale,
-                )
-                if not morph.randomize:
-                    saved_state = np.random.get_state()
-                    np.random.seed(0)
-                    if subterrain_type == "flat_terrain":
-                        subterrain = None
-                    elif subterrain_type == "fractal_terrain":
-                        subterrain = fractal_terrain(new_subterrain, levels=8, scale=5.0)
-                    elif subterrain_type == "random_uniform_terrain":
-                        subterrain = isaacgym_terrain_utils.random_uniform_terrain(
-                            new_subterrain,
-                            min_height=-0.1,
-                            max_height=0.1,
-                            step=0.25,
-                            downsampled_scale=0.5,
-                        )
-                    elif subterrain_type == "sloped_terrain":
-                        subterrain = isaacgym_terrain_utils.sloped_terrain(
-                            new_subterrain,
-                            slope=-0.5,
-                        )
-                    elif subterrain_type == "pyramid_sloped_terrain":
-                        slope = random.uniform(0.1, 0.5)
-                        subterrain = isaacgym_terrain_utils.pyramid_sloped_terrain(
-                            new_subterrain,
-                            slope=slope,
-                        )
-                    elif subterrain_type == "pyramid_down_sloped_terrain":
-                        slope = random.uniform(-0.1, -0.25)
-                        subterrain = isaacgym_terrain_utils.pyramid_sloped_terrain(
-                            new_subterrain,
-                            slope=slope,
-                        )
-                    elif subterrain_type == "discrete_obstacles_terrain":
-                        subterrain = isaacgym_terrain_utils.discrete_obstacles_terrain(
-                            new_subterrain,
-                            slope=-0.2,
-                            pit_size_m=0.2,
-                            pit_gap_m=0.4,
-                            pit_depth_m=0.2,
-                            platform_size_m=0.0, 
-                        )
-                    elif subterrain_type == "shallow_discrete_obstacles_terrain":
-                        subterrain = isaacgym_terrain_utils.discrete_obstacles_terrain(
-                            new_subterrain,
-                            slope=-0.2,
-                            pit_size_m=0.2,
-                            pit_gap_m=0.4,
-                            pit_depth_m=0.05,
-                            platform_size_m=0.0, 
-                        )
-                    elif subterrain_type == "wave_terrain":
-                        subterrain = isaacgym_terrain_utils.wave_terrain(
-                            new_subterrain,
-                            num_waves=2.0,
-                            amplitude=0.1,
-                        )
-                    elif subterrain_type == "stairs_terrain":
-                        subterrain = isaacgym_terrain_utils.stairs_terrain(
-                            new_subterrain,
-                            step_width=0.75,
-                            step_height=-0.1,
-                        )
-                    elif subterrain_type == "pyramid_stairs_terrain":
-                        step_height = random.uniform(0.05, 0.1)
-                        step_width = random.uniform(0.25, 0.3)
-                        subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
-                            new_subterrain,
-                            step_width= step_width,
-                            step_height= step_height,
-                        )
-                    elif subterrain_type == "pyramid_down_stairs_terrain":
-                        step_height = random.uniform(-0.15, -0.2)
-                        step_width = random.uniform(0.25, 0.3)
-                        subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
-                            new_subterrain,
-                            step_width= step_width,
-                            step_height= step_height,
-                        )
-                    elif subterrain_type == "pyramid_steep_down_stairs_terrain":
-                        step_height = -0.2 
-                        step_width = 0.25
-                        subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
-                            new_subterrain,
-                            step_width= step_width,
-                            step_height= step_height,
-                        )
-                    elif subterrain_type == "pyramid_shallow_down_stairs_terrain":
-                        step_height = random.uniform(-0.05, -0.13)
-                        step_width = random.uniform(0.3, 0.4)
-                        subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
-                            new_subterrain,
-                            step_width= step_width,
-                            step_height= step_height,
-                        )
-                    elif subterrain_type == "stepping_stones_terrain":
-                        subterrain = isaacgym_terrain_utils.stepping_stones_terrain(
-                            new_subterrain,
-                            stone_size=1.0,
-                            stone_distance=0.25,
-                            max_height=0.2,
-                            platform_size=0.0,
-                        )
-                    elif subterrain_type == "stamble_terrain":
-                        subterrain = isaacgym_terrain_utils.stamble_terrain(
-                            new_subterrain,
-                            patch_size_m = 0.4,
-                            gap_m = 0.1
-                        )
-                    elif subterrain_type == "shallow_stamble_terrain":
-                        subterrain = isaacgym_terrain_utils.stamble_terrain(
-                            new_subterrain,
-                            height_range_m = (0.03, 0.05),
-                            patch_size_m = 0.4,
-                            gap_m = 0.1
-                        )
-                    elif subterrain_type == "blocky_terrain":
-                        subterrain = isaacgym_terrain_utils.blocky_terrain(
-                            new_subterrain,
-                            patch_size_m = 0.7,
-                            gap_m = 0.2
-                        )
-                    elif subterrain_type == "shallow_blocky_terrain":
-                        subterrain = isaacgym_terrain_utils.blocky_terrain(
-                            new_subterrain,
-                            height_range_m = (0.03, 0.05),
-                            patch_size_m = 0.7,
-                            gap_m = 0.2
-                        )
-                    elif subterrain_type == "debug_terrain":
-                        subterrain = isaacgym_terrain_utils.debug_terrain(
-                            new_subterrain,
-                        )
-                    else:
-                        gs.raise_exception(f"Unsupported subterrain type: {subterrain_type}")
-
-                if not morph.randomize:
-                    np.random.set_state(saved_state)
-
-                if subterrain is None:
-                    data = np.zeros((subterrain_rows, subterrain_cols), dtype=gs.np_float)
-                else:
-                    data = subterrain.height_field_raw
-
-                subterrain_heightfield = heightfield[
-                    i * (subterrain_rows - 1) : (i + 1) * (subterrain_rows - 1) + 1,
-                    j * (subterrain_cols - 1) : (j + 1) * (subterrain_cols - 1) + 1,
-                ]
-                subterrain_heightfield[:] = np.maximum(subterrain_heightfield, data)
-
-        need_uvs = getattr(surface, "diffuse_texture", None) is not None
-        tmesh, sdf_tmesh = convert_heightfield_to_watertight_trimesh(
-            heightfield,
-            horizontal_scale=morph.horizontal_scale,
-            vertical_scale=morph.vertical_scale,
-            surface=surface,
-            uv_scale=morph.uv_scale if need_uvs else None,
         )
 
-        terrain_dir = os.path.join(get_assets_dir(), f"terrain/{morph.name}")
-        os.makedirs(terrain_dir, exist_ok=True)
+    heightfield = morph.height_field
+    if heightfield is None and (gnd_file_path is not None and gnd_file_path.exists()):
+        gs.logger.debug(f"Pre-genenerated terrain heightmap '{morph.name}' found in cache.")
+        try:
+            with open(gnd_file_path, "rb") as fd:
+                heightfield = pkl.load(fd)
+        except (EOFError, ModuleNotFoundError, pkl.UnpicklingError):
+            # Do not ignore error in case of corrupted cache, to make sure the user is aware of it
+            gs.raise_exception(f"Corrupted cache for terrain heightmap: {gnd_file_path}")
 
-        tmesh.export(os.path.join(terrain_dir, "tmesh.stl"))
-        sdf_tmesh.export(os.path.join(terrain_dir, "sdf_tmesh.stl"))
-        with open(os.path.join(terrain_dir, "info.pkl"), "wb") as f:
-            info = {
-                "horizontal_scale": morph.horizontal_scale,
-                "vertical_scale": morph.vertical_scale,
-                "height_field": heightfield,
-            }
-            pickle.dump(info, f)
+    if heightfield is None:
+        subterrain_rows = int(morph.subterrain_size[0] / morph.horizontal_scale + gs.EPS) + 1
+        subterrain_cols = int(morph.subterrain_size[1] / morph.horizontal_scale + gs.EPS) + 1
+        heightfield = np.full(
+            (
+                morph.n_subterrains[0] * (subterrain_rows - 1) + 1,
+                morph.n_subterrains[1] * (subterrain_cols - 1) + 1,
+            ),
+            fill_value=float("-inf"),
+            dtype=gs.np_float,
+        )
 
+        for i, j in zip(*map(np.ravel, np.meshgrid(*map(range, morph.n_subterrains), indexing="ij"))):
+            subterrain_type = morph.subterrain_types[i][j]
+            params = morph.subterrain_params[subterrain_type]
+
+            new_subterrain = isaacgym_terrain_utils.SubTerrain(
+                width=subterrain_rows,
+                length=subterrain_cols,
+                vertical_scale=morph.vertical_scale,
+                horizontal_scale=morph.horizontal_scale,
+            )
+            if not morph.randomize:
+                saved_state = np.random.get_state()
+                np.random.seed(0)
+            if subterrain_type == "flat_terrain":
+                subterrain = None
+            elif subterrain_type == "fractal_terrain":
+                subterrain = fractal_terrain(
+                    new_subterrain,
+                    levels=params.get("levels", 8),
+                    scale=params.get("scale", 5.0),
+                )
+            elif subterrain_type == "random_uniform_terrain":
+                subterrain = isaacgym_terrain_utils.random_uniform_terrain(
+                    new_subterrain,
+                    min_height=params.get("min_height", -0.1),
+                    max_height=params.get("max_height", 0.1),
+                    step=params.get("step", 0.1),
+                    downsampled_scale=params.get("downsampled_scale", 0.5),
+                )
+            elif subterrain_type == "sloped_terrain":
+                subterrain = isaacgym_terrain_utils.sloped_terrain(
+                    new_subterrain,
+                    slope=params.get("slope", -0.5),
+                )
+            elif subterrain_type == "pyramid_sloped_terrain":
+                subterrain = isaacgym_terrain_utils.pyramid_sloped_terrain(
+                    new_subterrain,
+                    slope=params.get("slope", -0.1),
+                )
+            elif subterrain_type == "discrete_obstacles_terrain":
+                subterrain = isaacgym_terrain_utils.discrete_obstacles_terrain(
+                    new_subterrain,
+                    max_height=params.get("max_height", 0.05),
+                    min_size=params.get("min_size", 1.0),
+                    max_size=params.get("max_size", 5.0),
+                    num_rects=params.get("num_rects", 20),
+                )
+            elif subterrain_type == "wave_terrain":
+                subterrain = isaacgym_terrain_utils.wave_terrain(
+                    new_subterrain,
+                    num_waves=params.get("num_waves", 2.0),
+                    amplitude=params.get("amplitude", 0.1),
+                )
+            elif subterrain_type == "stairs_terrain":
+                subterrain = isaacgym_terrain_utils.stairs_terrain(
+                    new_subterrain,
+                    step_width=params.get("step_width", 0.75),
+                    step_height=params.get("step_height", -0.1),
+                )
+            elif subterrain_type == "pyramid_stairs_terrain":
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width=params.get("step_width", 0.75),
+                    step_height=params.get("step_height", -0.1),
+                )
+            elif subterrain_type == "stepping_stones_terrain":
+                subterrain = isaacgym_terrain_utils.stepping_stones_terrain(
+                    new_subterrain,
+                    stone_size=params.get("stone_size", 1.0),
+                    stone_distance=params.get("stone_distance", 0.25),
+                    max_height=params.get("max_height", 0.2),
+                    platform_size=params.get("platform_size", 0.0),
+                )
+            else:
+                gs.raise_exception(f"Unsupported subterrain type: {subterrain_type}")
+
+            if not morph.randomize:
+                np.random.set_state(saved_state)
+
+            if subterrain is None:
+                data = np.zeros((subterrain_rows, subterrain_cols), dtype=gs.np_float)
+            else:
+                data = subterrain.height_field_raw
+
+            subterrain_heightfield = heightfield[
+                i * (subterrain_rows - 1) : (i + 1) * (subterrain_rows - 1) + 1,
+                j * (subterrain_cols - 1) : (j + 1) * (subterrain_cols - 1) + 1,
+            ]
+            subterrain_heightfield[:] = np.maximum(subterrain_heightfield, data)
+
+        if gnd_file_path is not None:
+            os.makedirs(os.path.dirname(gnd_file_path), exist_ok=True)
+            with open(gnd_file_path, "wb") as file:
+                pkl.dump(heightfield, file)
+
+    need_uvs = getattr(surface, "diffuse_texture", None) is not None
+    tmesh, sdf_tmesh = convert_heightfield_to_watertight_trimesh(
+        heightfield,
+        horizontal_scale=morph.horizontal_scale,
+        vertical_scale=morph.vertical_scale,
+        surface=surface,
+        uv_scale=morph.uv_scale if need_uvs else None,
+    )
     vmesh = gs.Mesh.from_trimesh(mesh=tmesh, surface=surface, metadata={})
     mesh = gs.Mesh.from_trimesh(
         mesh=tmesh,
@@ -322,7 +253,7 @@ def convert_heightfield_to_watertight_trimesh(
     yy, xx = np.meshgrid(y, x)
 
     if slope_threshold is not None:
-        # assert False  # our sdf representation doesn't support steep slopes well
+        assert False  # our sdf representation doesn't support steep slopes well
 
         slope_threshold *= horizontal_scale / vertical_scale
         move_x = np.zeros((num_rows, num_cols))
@@ -342,10 +273,8 @@ def convert_heightfield_to_watertight_trimesh(
         yy += (move_y + move_corners * (move_y == 0)) * horizontal_scale
 
     # create triangle mesh vertices and triangles from the heightfield grid
-    vertices_top = np.zeros((num_rows * num_cols, 3), dtype=np.float32)
-    vertices_top[:, 0] = xx.flat
-    vertices_top[:, 1] = yy.flat
-    vertices_top[:, 2] = (hf * vertical_scale).flat
+    zz = hf * vertical_scale
+    vertices_top = np.stack((xx.flat, yy.flat, zz.flat), axis=-1, dtype=np.float32)
     triangles_top = -np.ones((2 * (num_rows - 1) * (num_cols - 1), 3), dtype=np.uint32)
     for i in range(num_rows - 1):
         ind0 = np.arange(0, num_cols - 1) + i * num_cols
@@ -377,7 +306,6 @@ def convert_heightfield_to_watertight_trimesh(
 
     # bottom plane
     z_min = np.min(vertices_top[:, 2]) - 1.0
-
     vertices_bottom = np.zeros((num_rows * num_cols, 3), dtype=np.float32)
     vertices_bottom[:, 0] = xx.flat
     vertices_bottom[:, 1] = yy.flat
@@ -456,12 +384,7 @@ def convert_heightfield_to_watertight_trimesh(
 
     # This is the mesh used for non-sdf purposes.
     # It's losslessly simplified from the full mesh, to save memory cost for storing verts and faces.
-    v_simp, f_simp = fast_simplification.simplify(
-        sdf_mesh.vertices,
-        sdf_mesh.faces,
-        target_count=0,
-        lossless=True,
-    )
+    v_simp, f_simp = fast_simplification.simplify(sdf_mesh.vertices, sdf_mesh.faces, target_count=0, lossless=True)
 
     if uvs is not None:
         idx_map = np.empty(len(v_simp), dtype=np.int64)
@@ -470,14 +393,8 @@ def convert_heightfield_to_watertight_trimesh(
             idx_map[i] = np.argmin(dists)
 
         uv_simp = uvs[idx_map]
-
-        vmesh_full = trimesh.Trimesh(
-            v_simp,
-            f_simp,
-            visual=trimesh.visual.TextureVisuals(uv=uv_simp),
-        )
-    else:
-        vmesh_full = trimesh.Trimesh(v_simp, f_simp)
+        visual = trimesh.visual.TextureVisuals(uv=uv_simp)
+    vmesh_full = trimesh.Trimesh(v_simp, f_simp, visual=visual)
 
     vmesh_out = vmesh_single if not surface.double_sided else vmesh_full
     return vmesh_out, sdf_mesh

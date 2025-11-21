@@ -150,6 +150,7 @@ class PathPlanner(ABC):
             for i_q in range(self._entity.n_qs):
                 for i_s in range(path.shape[0]):
                     tensor[i_s, i_b, i_q] = path[i_s, i_b, i_q]
+
         ti.loop_config(serialize=self._solver._para_level < gs.PARA_LEVEL.ALL)
         for i_b in range(path.shape[1]):
             if mask[i_b]:
@@ -301,27 +302,26 @@ class PathPlanner(ABC):
 
 @ti.data_oriented
 class RRT(PathPlanner):
+    def __init__(self, entity):
+        super().__init__(entity)
+        self._is_rrt_init = False
+
     def _init_rrt_fields(self, goal_bias=0.05, max_nodes=2000, pos_tol=5e-3, max_step_size=0.1):
-        self._is_rrt_init = getattr(self, "_is_rrt_init", False)
         if not self._is_rrt_init:
             self._rrt_goal_bias = goal_bias
             self._rrt_max_nodes = max_nodes
             self._rrt_pos_tol = pos_tol
             self._rrt_max_step_size = max_step_size
-            self._rrt_start_configuration = ti.field(
-                dtype=gs.ti_float, shape=self._solver._batch_shape(self._entity.n_qs)
-            )
-            self._rrt_goal_configuration = ti.field(
-                dtype=gs.ti_float, shape=self._solver._batch_shape(self._entity.n_qs)
-            )
+            self._rrt_start_configuration = ti.field(dtype=gs.ti_float, shape=(self._entity.n_qs, self._solver._B))
+            self._rrt_goal_configuration = ti.field(dtype=gs.ti_float, shape=(self._entity.n_qs, self._solver._B))
             self.struct_rrt_node_info = ti.types.struct(
                 configuration=ti.types.vector(self._entity.n_qs, gs.ti_float),
                 parent_idx=gs.ti_int,
             )
-            self._rrt_node_info = self.struct_rrt_node_info.field(shape=self._solver._batch_shape(self._rrt_max_nodes))
-            self._rrt_tree_size = ti.field(dtype=gs.ti_int, shape=self._solver._batch_shape())
-            self._rrt_is_active = ti.field(dtype=gs.ti_bool, shape=self._solver._batch_shape())
-            self._rrt_goal_reached_node_idx = ti.field(dtype=gs.ti_int, shape=self._solver._batch_shape())
+            self._rrt_node_info = self.struct_rrt_node_info.field(shape=(self._rrt_max_nodes, self._solver._B))
+            self._rrt_tree_size = ti.field(dtype=gs.ti_int, shape=(self._solver._B,))
+            self._rrt_is_active = ti.field(dtype=gs.ti_bool, shape=(self._solver._B,))
+            self._rrt_goal_reached_node_idx = ti.field(dtype=gs.ti_int, shape=(self._solver._B,))
             self._is_rrt_init = True
 
     def _reset_rrt_fields(self):
@@ -438,6 +438,7 @@ class RRT(PathPlanner):
                         links_state,
                         rigid_global_info,
                         self._solver._static_rigid_sim_config,
+                        force_update_fixed_geoms=False,
                     )
 
     @ti.kernel
@@ -647,27 +648,26 @@ class RRT(PathPlanner):
 
 @ti.data_oriented
 class RRTConnect(PathPlanner):
+    def __init__(self, entity):
+        super().__init__(entity)
+        self._is_rrt_connect_init = False
+
     def _init_rrt_connect_fields(self, goal_bias=0.1, max_nodes=4000, max_step_size=0.05):
-        self._is_rrt_connect_init = getattr(self, "_is_rrt_connect_init", False)
         if not self._is_rrt_connect_init:
             self._rrt_goal_bias = goal_bias
             self._rrt_max_nodes = max_nodes
             self._rrt_max_step_size = max_step_size
-            self._rrt_start_configuration = ti.field(
-                dtype=gs.ti_float, shape=self._solver._batch_shape(self._entity.n_qs)
-            )
-            self._rrt_goal_configuration = ti.field(
-                dtype=gs.ti_float, shape=self._solver._batch_shape(self._entity.n_qs)
-            )
+            self._rrt_start_configuration = ti.field(dtype=gs.ti_float, shape=(self._entity.n_qs, self._solver._B))
+            self._rrt_goal_configuration = ti.field(dtype=gs.ti_float, shape=(self._entity.n_qs, self._solver._B))
             self.struct_rrt_node_info = ti.types.struct(
                 configuration=ti.types.vector(self._entity.n_qs, gs.ti_float),
                 parent_idx=gs.ti_int,
                 child_idx=gs.ti_int,
             )
-            self._rrt_node_info = self.struct_rrt_node_info.field(shape=self._solver._batch_shape(self._rrt_max_nodes))
-            self._rrt_tree_size = ti.field(dtype=gs.ti_int, shape=self._solver._batch_shape())
-            self._rrt_is_active = ti.field(dtype=gs.ti_bool, shape=self._solver._batch_shape())
-            self._rrt_goal_reached_node_idx = ti.field(dtype=gs.ti_int, shape=self._solver._batch_shape())
+            self._rrt_node_info = self.struct_rrt_node_info.field(shape=(self._rrt_max_nodes, self._solver._B))
+            self._rrt_tree_size = ti.field(dtype=gs.ti_int, shape=(self._solver._B,))
+            self._rrt_is_active = ti.field(dtype=gs.ti_bool, shape=(self._solver._B,))
+            self._rrt_goal_reached_node_idx = ti.field(dtype=gs.ti_int, shape=(self._solver._B,))
             self._is_rrt_connect_init = True
 
     def _reset_rrt_connect_fields(self):
@@ -806,6 +806,7 @@ class RRTConnect(PathPlanner):
                         links_state,
                         rigid_global_info,
                         self._solver._static_rigid_sim_config,
+                        force_update_fixed_geoms=False,
                     )
 
     @ti.kernel

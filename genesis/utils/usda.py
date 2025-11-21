@@ -17,9 +17,9 @@ from . import mesh as mu
 try:
     from pxr import Usd, UsdGeom, UsdShade, Sdf
 except ImportError as e:
-    gs.raise_exception_from(
-        "Failed to import USD dependencies. Try installing Genesis with 'usd' optional dependencies.", e
-    )
+    raise ImportError(
+        "Failed to import USD dependencies. Try installing Genesis with 'usd' optional dependencies."
+    ) from e
 
 
 cs_encode = {
@@ -29,8 +29,6 @@ cs_encode = {
     "": None,
 }
 
-yup_rotation = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0))
-
 
 def get_input_attribute_value(shader, input_name, input_type=None):
     shader_input = shader.GetInput(input_name)
@@ -38,15 +36,26 @@ def get_input_attribute_value(shader, input_name, input_type=None):
     if input_type != "value":
         if shader_input.GetPrim().IsValid() and shader_input.HasConnectedSource():
             shader_input_connect, shader_input_name = shader_input.GetConnectedSource()[:2]
-            return UsdShade.Shader(shader_input_connect.GetPrim()), shader_input_name
+            return shader_input_connect.GetPrim(), shader_input_name
 
     if input_type != "attribute":
         return shader_input.Get(), None
     return None, None
 
 
-def parse_preview_surface(shader, output_name):
+def get_shader(prim, output_name):
+    if prim.IsA(UsdShade.Shader):
+        return UsdShade.Shader(prim)
+    elif prim.IsA(UsdShade.NodeGraph):
+        return UsdShade.NodeGraph(prim).ComputeOutputSource(output_name)[0]
+    else:
+        gs.raise_exception(f"Invalid shader type: {prim.GetTypeName()} at {prim.GetPath()}.")
+
+
+def parse_preview_surface(prim, output_name):
+    shader = get_shader(prim, output_name)
     shader_id = shader.GetShaderId()
+
     if shader_id == "UsdPreviewSurface":
         uvname = None
 
@@ -126,25 +135,26 @@ def parse_preview_surface(shader, output_name):
         texture = get_input_attribute_value(shader, "file", "value")[0]
         if texture is not None:
             texture_image = np.asarray(Image.open(texture.resolvedPath))
-            if output_name == "r":
-                texture_image = texture_image[:, :, 0]
-            elif output_name == "g":
-                texture_image = texture_image[:, :, 1]
-            elif output_name == "b":
-                texture_image = texture_image[:, :, 2]
-            elif output_name == "a":
-                texture_image = texture_image[:, :, 3]
-            elif output_name == "rgb":
-                texture_image = texture_image[:, :, :3]
-            else:
-                gs.raise_exception(f"Invalid output channel for UsdUVTexture: {output_name}.")
+            if texture_image.ndim == 3:
+                if output_name == "r":
+                    texture_image = texture_image[:, :, 0]
+                elif output_name == "g":
+                    texture_image = texture_image[:, :, 1]
+                elif output_name == "b":
+                    texture_image = texture_image[:, :, 2]
+                elif output_name == "a":
+                    texture_image = texture_image[:, :, 3]
+                elif output_name == "rgb":
+                    texture_image = texture_image[:, :, :3]
+                else:
+                    gs.raise_exception(f"Invalid output channel for UsdUVTexture: {output_name}.")
         else:
             texture_image = None
 
         texture_encode = get_input_attribute_value(shader, "sourceColorSpace", "value")[0] or "sRGB"
         texture_encode = cs_encode[texture_encode]
-        texture_uvs_shader, texture_uvs_output = get_input_attribute_value(shader, "st", "attribute")
-        texture_uvs_name = parse_preview_surface(texture_uvs_shader, texture_uvs_output)
+        texture_uvs, texture_uvs_output = get_input_attribute_value(shader, "st", "attribute")
+        texture_uvs_name = parse_preview_surface(texture_uvs, texture_uvs_output)
 
         return texture_image, texture_encode, texture_uvs_name
 
@@ -164,12 +174,13 @@ def parse_usd_material(material, surface):
         if not surface_output.HasConnectedSource():
             continue
         surface_output_connectable, surface_output_name, _ = surface_output.GetConnectedSource()
-        surface_shader = UsdShade.Shader(surface_output_connectable.GetPrim())
+        surface_output_connect = surface_output_connectable.GetPrim()
+        surface_shader = get_shader(surface_output_connect, "surface")
         surface_shader_implement = surface_shader.GetImplementationSource()
         surface_shader_id = surface_shader.GetShaderId()
 
         if surface_shader_implement == "id" and surface_shader_id == "UsdPreviewSurface":
-            material_dict, uv_name = parse_preview_surface(surface_shader, surface_output_name)
+            material_dict, uv_name = parse_preview_surface(surface_output_connect, surface_output_name)
             require_bake = False
             break
 
@@ -349,7 +360,7 @@ def parse_mesh_usd(path, group_by_material, scale, surface, bake_cache=True):
         if prim.IsA(UsdGeom.Mesh):
             matrix = np.asarray(xform_cache.GetLocalToWorldTransform(prim), dtype=np.float32)
             if yup:
-                matrix[:3, :3] @= np.asarray(yup_rotation, dtype=np.float32)
+                matrix @= mu.Y_UP_TRANSFORM
             mesh_usd = UsdGeom.Mesh(prim)
             mesh_spec = prim.GetPrimStack()[-1]
             mesh_id = mesh_spec.layer.identifier + mesh_spec.path.pathString
@@ -390,12 +401,14 @@ def parse_mesh_usd(path, group_by_material, scale, surface, bake_cache=True):
                 uv_var = UsdGeom.PrimvarsAPI(prim).GetPrimvar(uv_name)
                 if uv_var.IsDefined() and uv_var.HasValue():
                     uvs = np.array(uv_var.ComputeFlattened(), dtype=np.float32)
+                    uvs[:, 1] = 1.0 - uvs[:, 1]
                     if uvs.shape[0] != points.shape[0]:
                         if uvs.shape[0] == faces.shape[0]:
                             points_faces_varying = True
+                        elif uvs.shape[0] == 1:
+                            uvs = None
                         else:
                             gs.raise_exception(f"Size of uvs mismatch for mesh {mesh_id} in usd file {path}.")
-                    uvs[:, 1] = 1.0 - uvs[:, 1]
 
             # rearrange points and faces
             if points_faces_varying:

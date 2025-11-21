@@ -1,14 +1,10 @@
-import numpy as np
 import gstaichi as ti
+import numpy as np
+import trimesh
 
 import genesis as gs
 import genesis.utils.geom as gu
-from genesis.utils.mesh import (
-    cleanup_mesh,
-    compute_sdf_data,
-    load_mesh,
-    normalize_mesh,
-)
+from genesis.utils.mesh import compute_sdf_data, load_mesh
 
 
 @ti.data_oriented
@@ -41,10 +37,18 @@ class Mesh:
         self.n_faces = len(self.faces_np)
 
     def process_mesh(self):
-        # clean up mesh
+        # Normalize mesh
         gs.logger.debug(f"Processing mesh: {self.raw_file}.")
-        raw_mesh = load_mesh(self.raw_file)
-        self.mesh = cleanup_mesh(normalize_mesh(raw_mesh))
+        mesh_orig = load_mesh(self.raw_file)
+        scale = np.linalg.norm(mesh_orig.extents, ord=float("inf"))
+        center = np.mean(mesh_orig.bounds, axis=0)
+        normalized_vertices = (mesh_orig.vertices - center) / scale
+        self.mesh = trimesh.Trimesh(
+            vertices=normalized_vertices,
+            faces=mesh_orig.faces,
+            vertex_normals=mesh_orig.vertex_normals,
+            face_normals=mesh_orig.face_normals,
+        )
 
         # generate sdf
         if self.collision:
@@ -58,7 +62,7 @@ class Mesh:
         # init ti fields
         self.init_vertices = ti.Vector.field(3, dtype=gs.ti_float, shape=(self.n_vertices))
         self.init_vertex_normals = ti.Vector.field(3, dtype=gs.ti_float, shape=(self.n_vertices))
-        self.faces = ti.field(dtype=gs.ti_int, shape=(self.n_faces))
+        self.faces = ti.field(dtype=gs.ti_int, shape=(self.n_faces,))
 
         self.init_vertices.from_numpy(self.raw_vertices)
         self.init_vertex_normals.from_numpy(self.raw_vertex_normals)
@@ -110,7 +114,7 @@ class Mesh:
         normal_vec_mesh = R_voxels_to_mesh @ normal_vec_voxels
 
         normal_vec_world = gu.ti_transform_by_quat(normal_vec_mesh, self.entity.quat[f, i_b])
-        normal_vec_world = gu.ti_normalize(normal_vec_world)
+        normal_vec_world = gu.ti_normalize(normal_vec_world, gs.EPS)
 
         return normal_vec_world
 
@@ -127,7 +131,7 @@ class Mesh:
             dec[i] -= delta
             normal_vec[i] = (self.sdf_(inc) - self.sdf_(dec)) / (2 * delta)
 
-        normal_vec = gu.ti_normalize(normal_vec)
+        normal_vec = gu.ti_normalize(normal_vec, gs.EPS)
 
         return normal_vec
 
@@ -191,7 +195,7 @@ class Mesh:
 
             sdf_voxels = self.sdf_(pos_voxels)
             normal_vec_voxels = self.normal_(pos_voxels)
-            normal_vec_voxels_ = gu.ti_normalize(normal_vec_voxels)
+            normal_vec_voxels_ = gu.ti_normalize(normal_vec_voxels, gs.EPS)
 
             vec_voxels = -sdf_voxels * normal_vec_voxels_
             R_voxels_to_mesh = self.T_mesh_to_sdf[None][:3, :3].inverse()

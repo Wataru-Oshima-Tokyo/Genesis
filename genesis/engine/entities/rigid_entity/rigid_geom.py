@@ -15,12 +15,12 @@ import genesis.utils.array_class as array_class
 import genesis.utils.geom as gu
 import genesis.utils.mesh as mu
 from genesis.repr_base import RBC
-from genesis.utils.misc import tensor_to_array
+from genesis.utils.misc import tensor_to_array, DeprecationError
 
 if TYPE_CHECKING:
-    from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
     from genesis.engine.materials.rigid import Rigid as RigidMaterial
     from genesis.engine.mesh import Mesh
+    from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 
     from .rigid_entity import RigidEntity
     from .rigid_link import RigidLink
@@ -360,8 +360,8 @@ class RigidGeom(RBC):
         """
         Get the position of the geom in world frame.
         """
-        tensor = torch.empty(self._solver._batch_shape(3, True), dtype=gs.tc_float, device=gs.device)
-        _kernel_get_geoms_pos(tensor, self._idx, self._solver.geoms_state)
+        tensor = torch.empty((self._solver._B, 3), dtype=gs.tc_float, device=gs.device)
+        _kernel_get_geoms_pos(self._idx, tensor, self._solver.geoms_state)
         if self._solver.n_envs == 0:
             tensor = tensor.squeeze(0)
         return tensor
@@ -371,8 +371,8 @@ class RigidGeom(RBC):
         """
         Get the quaternion of the geom in world frame.
         """
-        tensor = torch.empty(self._solver._batch_shape(4, True), dtype=gs.tc_float, device=gs.device)
-        _kernel_get_geoms_quat(tensor, self._idx, self._solver.geoms_state)
+        tensor = torch.empty((self._solver._B, 4), dtype=gs.tc_float, device=gs.device)
+        _kernel_get_geoms_quat(self._idx, tensor, self._solver.geoms_state)
         if self._solver.n_envs == 0:
             tensor = tensor.squeeze(0)
         return tensor
@@ -382,17 +382,16 @@ class RigidGeom(RBC):
         """
         Get the vertices of the geom in world frame.
         """
-        self._solver.update_verts_for_geom(self._idx)
-        if self.is_free:
-            tensor = torch.empty(
-                self._solver._batch_shape((self.n_verts, 3), True), dtype=gs.tc_float, device=gs.device
-            )
+        self._solver.update_verts_for_geoms(self._idx)
+
+        if self.is_fixed and not self._entity._batch_fixed_verts:
+            tensor = torch.empty((self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
+            _kernel_get_fixed_verts(tensor, self._verts_state_start, self.n_verts, self._solver.fixed_verts_state)
+        else:
+            tensor = torch.empty((self._solver._B, self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
             _kernel_get_free_verts(tensor, self._verts_state_start, self.n_verts, self._solver.free_verts_state)
             if self._solver.n_envs == 0:
                 tensor = tensor.squeeze(0)
-        else:
-            tensor = torch.empty((self.n_verts, 3), dtype=gs.tc_float, device=gs.device)
-            _kernel_get_fixed_verts(tensor, self._verts_state_start, self.n_verts, self._solver.fixed_verts_state)
         return tensor
 
     @gs.assert_built
@@ -802,10 +801,14 @@ class RigidGeom(RBC):
 
     @property
     def is_free(self):
+        raise DeprecationError("This property has been removed.")
+
+    @property
+    def is_fixed(self) -> bool:
         """
-        Whether the rigid entity the vgeom belongs to is free.
+        Whether this geom is fixed in the world.
         """
-        return self.entity.is_free
+        return self.link.is_fixed
 
     # ------------------------------------------------------------------------------------
     # -------------------------------------- repr ----------------------------------------
@@ -872,8 +875,8 @@ class RigidVisGeom(RBC):
         """
         Get the position of the geom in world frame.
         """
-        tensor = torch.empty(self._solver._batch_shape(3, True), dtype=gs.tc_float, device=gs.device)
-        _kernel_get_vgeoms_pos(tensor, self._idx, self._solver.vgeoms_state)
+        tensor = torch.empty((self._solver._B, 3), dtype=gs.tc_float, device=gs.device)
+        _kernel_get_vgeoms_pos(self._idx, tensor, self._solver.vgeoms_state)
         if self._solver.n_envs == 0:
             tensor = tensor.squeeze(0)
         return tensor
@@ -883,8 +886,8 @@ class RigidVisGeom(RBC):
         """
         Get the quaternion of the geom in world frame.
         """
-        tensor = torch.empty(self._solver._batch_shape(4, True), dtype=gs.tc_float, device=gs.device)
-        _kernel_get_vgeoms_quat(tensor, self._idx, self._solver.vgeoms_state)
+        tensor = torch.empty((self._solver._B, 4), dtype=gs.tc_float, device=gs.device)
+        _kernel_get_vgeoms_quat(self._idx, tensor, self._solver.vgeoms_state)
         if self._solver.n_envs == 0:
             tensor = tensor.squeeze(0)
         return tensor
@@ -1039,10 +1042,14 @@ class RigidVisGeom(RBC):
 
     @property
     def is_free(self):
+        raise DeprecationError("This property has been removed.")
+
+    @property
+    def is_fixed(self) -> bool:
         """
-        Whether the rigid entity the vgeom belongs to is free.
+        Whether this vgeom is fixed in the world.
         """
-        return self.entity.is_free
+        return self.link.is_fixed
 
     # ------------------------------------------------------------------------------------
     # -------------------------------------- repr ----------------------------------------
@@ -1052,51 +1059,51 @@ class RigidVisGeom(RBC):
         return f"{self._repr_type()}: {self._uid}, idx: {self._idx} (from entity {self._entity.uid}, link {self._link.uid})"
 
 
-@ti.kernel
-def _kernel_get_geoms_pos(tensor: ti.types.ndarray(), geom_idx: ti.i32, geoms_state: array_class.GeomsState):
+@ti.kernel(fastcache=gs.use_fastcache)
+def _kernel_get_geoms_pos(geom_idx: ti.i32, tensor: ti.types.ndarray(), geoms_state: array_class.GeomsState):
     _B = geoms_state.pos.shape[1]
     for i, i_b in ti.ndrange(3, _B):
         tensor[i_b, i] = geoms_state.pos[geom_idx, i_b][i]
 
 
-@ti.kernel
-def _kernel_get_geoms_quat(tensor: ti.types.ndarray(), geom_idx: ti.i32, geoms_state: array_class.GeomsState):
+@ti.kernel(fastcache=gs.use_fastcache)
+def _kernel_get_geoms_quat(geom_idx: ti.i32, tensor: ti.types.ndarray(), geoms_state: array_class.GeomsState):
     _B = geoms_state.pos.shape[1]
     for i, i_b in ti.ndrange(4, _B):
         tensor[i_b, i] = geoms_state.quat[geom_idx, i_b][i]
 
 
-@ti.kernel
-def _kernel_get_vgeoms_pos(tensor: ti.types.ndarray(), vgeom_idx: ti.i32, vgeoms_state: array_class.VGeomsState):
+@ti.kernel(fastcache=gs.use_fastcache)
+def _kernel_get_vgeoms_pos(vgeom_idx: ti.i32, tensor: ti.types.ndarray(), vgeoms_state: array_class.VGeomsState):
     _B = vgeoms_state.pos.shape[1]
     for i, i_b in ti.ndrange(3, _B):
         tensor[i_b, i] = vgeoms_state.pos[vgeom_idx, i_b][i]
 
 
-@ti.kernel
-def _kernel_get_vgeoms_quat(tensor: ti.types.ndarray(), vgeom_idx: ti.i32, vgeoms_state: array_class.VGeomsState):
+@ti.kernel(fastcache=gs.use_fastcache)
+def _kernel_get_vgeoms_quat(vgeom_idx: ti.i32, tensor: ti.types.ndarray(), vgeoms_state: array_class.VGeomsState):
     _B = vgeoms_state.pos.shape[1]
     for i, i_b in ti.ndrange(4, _B):
         tensor[i_b, i] = vgeoms_state.quat[vgeom_idx, i_b][i]
 
 
-@ti.kernel
+@ti.kernel(fastcache=gs.use_fastcache)
 def _kernel_get_free_verts(
-    tensor: ti.types.ndarray(), verts_state_start: ti.i32, n_verts: ti.i32, free_verts_state: array_class.FreeVertsState
+    tensor: ti.types.ndarray(), verts_state_start: ti.i32, n_verts: ti.i32, free_verts_state: array_class.VertsState
 ):
     _B = free_verts_state.pos.shape[1]
-    for i_v, j, i_b in ti.ndrange(n_verts, 3, _B):
-        idx_vert = i_v + verts_state_start
-        tensor[i_b, i_v, j] = free_verts_state.pos[idx_vert, i_b][j]
+    for i_v_, i, i_b in ti.ndrange(n_verts, 3, _B):
+        i_v = i_v_ + verts_state_start
+        tensor[i_b, i_v_, i] = free_verts_state.pos[i_v, i_b][i]
 
 
-@ti.kernel
+@ti.kernel(fastcache=gs.use_fastcache)
 def _kernel_get_fixed_verts(
     tensor: ti.types.ndarray(),
     verts_state_start: ti.i32,
     n_verts: ti.i32,
-    fixed_verts_state: array_class.FixedVertsState,
+    fixed_verts_state: array_class.VertsState,
 ):
-    for i_v, j in ti.ndrange(n_verts, 3):
-        idx_vert = i_v + verts_state_start
-        tensor[i_v, j] = fixed_verts_state.pos[idx_vert][j]
+    for i_v_, i in ti.ndrange(n_verts, 3):
+        i_v = i_v_ + verts_state_start
+        tensor[i_v_, i] = fixed_verts_state.pos[i_v][i]

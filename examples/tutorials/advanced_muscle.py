@@ -3,7 +3,7 @@ import genesis as gs
 
 
 ########################## init ##########################
-gs.init(seed=0, precision="32", logging_level="debug")
+gs.init(precision="32", logging_level="info")
 
 ########################## create a scene ##########################
 dt = 5e-4
@@ -65,7 +65,7 @@ robot_fem = scene.add_entity(
 )
 
 ########################## build ##########################
-scene.build(n_envs=5)
+scene.build(n_envs=2)
 
 ########################## run ##########################
 scene.reset()

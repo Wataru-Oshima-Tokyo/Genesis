@@ -1,3 +1,5 @@
+from functools import wraps
+
 import igl
 import numpy as np
 import gstaichi as ti
@@ -14,6 +16,16 @@ from genesis.engine.states.entities import FEMEntityState
 from genesis.utils.misc import ALLOCATE_TENSOR_WARNING, to_gs_tensor, tensor_to_array
 
 from .base_entity import Entity
+
+
+def assert_muscle(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if not isinstance(self.material, gs.materials.FEM.Muscle):
+            gs.raise_exception("This method is only supported by entities with 'FEM.Muscle' material.")
+        return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 @ti.data_oriented
@@ -59,29 +71,46 @@ class FEMEntity(Entity):
 
         self.sample()
 
-        el2tri = np.array(
-            [  # follow the order with correct normal
-                [[v[0], v[2], v[1]], [v[1], v[2], v[3]], [v[0], v[1], v[3]], [v[0], v[3], v[2]]] for v in self.elems
-            ],
-            dtype=gs.np_int,
-        )
-        all_tri = el2tri.reshape((-1, 3))
-        all_tri_sorted = np.sort(all_tri, axis=1)
-        _, unique_idcs, cnt = np.unique(all_tri_sorted, axis=0, return_counts=True, return_index=True)
-        unique_tri = all_tri[unique_idcs]
-        surface_tri = unique_tri[cnt == 1]
+        # Check if this is cloth (elements are already triangles)
+        from genesis.engine.materials.FEM.cloth import Cloth as ClothMaterial
 
-        self._surface_tri_np = surface_tri
-        self._n_surfaces = len(self._surface_tri_np)
+        is_cloth = isinstance(self.material, ClothMaterial)
 
-        if self._n_surfaces > 0:
-            self._n_surface_vertices = len(np.unique(self._surface_tri_np))
+        if is_cloth:
+            # For cloth, elements are already surface triangles
+            self._surface_tri_np = self.elems
+            self._n_surfaces = len(self._surface_tri_np)
+            if self._n_surfaces > 0:
+                self._n_surface_vertices = len(np.unique(self._surface_tri_np))
+            else:
+                self._n_surface_vertices = 0
+            # For cloth, each triangle is its own "element"
+            self._surface_el_np = np.arange(self.elems.shape[0], dtype=gs.np_int)
         else:
-            self._n_surface_vertices = 0
+            # For volumetric FEM, extract surface triangles from tetrahedral elements
+            el2tri = np.array(
+                [  # follow the order with correct normal
+                    [[v[0], v[2], v[1]], [v[1], v[2], v[3]], [v[0], v[1], v[3]], [v[0], v[3], v[2]]] for v in self.elems
+                ],
+                dtype=gs.np_int,
+            )
+            all_tri = el2tri.reshape((-1, 3))
+            all_tri_sorted = np.sort(all_tri, axis=1)
+            _, unique_idcs, cnt = np.unique(all_tri_sorted, axis=0, return_counts=True, return_index=True)
+            unique_tri = all_tri[unique_idcs]
+            surface_tri = unique_tri[cnt == 1]
 
-        tri2el = np.repeat(np.arange(self.elems.shape[0], dtype=gs.np_int)[:, np.newaxis], 4, axis=1)
-        unique_el = tri2el.flat[unique_idcs]
-        self._surface_el_np = unique_el[cnt == 1]
+            self._surface_tri_np = surface_tri
+            self._n_surfaces = len(self._surface_tri_np)
+
+            if self._n_surfaces > 0:
+                self._n_surface_vertices = len(np.unique(self._surface_tri_np))
+            else:
+                self._n_surface_vertices = 0
+
+            tri2el = np.repeat(np.arange(self.elems.shape[0], dtype=gs.np_int)[:, np.newaxis], 4, axis=1)
+            unique_el = tri2el.flat[unique_idcs]
+            self._surface_el_np = unique_el[cnt == 1]
 
         if isinstance(self.sim.coupler, SAPCoupler):
             self.compute_pressure_field()
@@ -183,6 +212,7 @@ class FEMEntity(Entity):
         if not is_valid:
             gs.raise_exception("Tensor shape not supported.")
 
+    @assert_muscle
     def set_actuation(self, actu):
         """
         Set the actuation signal for the FEM entity.
@@ -204,9 +234,8 @@ class FEMEntity(Entity):
 
         actu = to_gs_tensor(actu)
 
-        n_groups = getattr(self.material, "n_groups", 1)
-
         is_valid = False
+        n_groups = self.material.n_groups
         if actu.ndim == 0:
             self._tgt["actu"] = actu.tile((self._sim._B, n_groups))
             is_valid = True
@@ -240,19 +269,17 @@ class FEMEntity(Entity):
         AssertionError
             If tensor shapes are incorrect or normalization fails.
         """
-
         self._assert_active()
 
-        if muscle_group is not None:
-            n_groups = getattr(self.material, "n_groups", 1)
-            max_group_id = muscle_group.max().item()
+        n_groups = self.material.n_groups
+        max_group_id = muscle_group.max().item()
 
-            muscle_group = to_gs_tensor(muscle_group)
+        muscle_group = to_gs_tensor(muscle_group)
 
-            assert muscle_group.shape == (self.n_elements,)
-            assert isinstance(max_group_id, int) and max_group_id < n_groups
+        assert muscle_group.shape == (self.n_elements,)
+        assert isinstance(max_group_id, int) and max_group_id < n_groups
 
-            self.set_muscle_group(muscle_group)
+        self.set_muscle_group(muscle_group)
 
         if muscle_direction is not None:
             muscle_direction = to_gs_tensor(muscle_direction)
@@ -263,12 +290,7 @@ class FEMEntity(Entity):
 
     def get_state(self):
         state = FEMEntityState(self, self._sim.cur_step_global)
-        self.get_frame(
-            self._sim.cur_substep_local,
-            state.pos,
-            state.vel,
-            state.active,
-        )
+        self.get_frame(self._sim.cur_substep_local, state.pos, state.vel, state.active)
 
         # we store all queried states to track gradient flow
         self._queried_states.append(state)
@@ -326,39 +348,63 @@ class FEMEntity(Entity):
         """
         Sample mesh and elements based on the entity's morph type.
 
+        For Cloth material, loads surface mesh directly without tetrahedralization.
+        For regular FEM materials, tetrahedralizes the mesh.
+
         Raises
         ------
         Exception
             If the morph type is unsupported.
         """
+        from genesis.engine.materials.FEM.cloth import Cloth as ClothMaterial
 
-        if isinstance(self.morph, gs.options.morphs.Sphere):
-            verts, elems = eu.sphere_to_elements(
-                pos=self._morph.pos,
-                radius=self._morph.radius,
-                tet_cfg=self.tet_cfg,
-            )
-        elif isinstance(self.morph, gs.options.morphs.Box):
-            verts, elems = eu.box_to_elements(
-                pos=self._morph.pos,
-                size=self._morph.size,
-                tet_cfg=self.tet_cfg,
-            )
-        elif isinstance(self.morph, gs.options.morphs.Cylinder):
-            verts, elems = eu.cylinder_to_elements()
-        elif isinstance(self.morph, gs.options.morphs.Mesh):
-            verts, elems = eu.mesh_to_elements(
-                file=self._morph.file,
-                pos=self._morph.pos,
-                scale=self._morph.scale,
-                tet_cfg=self.tet_cfg,
-            )
+        is_cloth = isinstance(self.material, ClothMaterial)
+
+        if is_cloth:
+            # Cloth: load surface mesh directly (no tetrahedralization)
+            if isinstance(self.morph, gs.options.morphs.Mesh):
+                import trimesh
+
+                mesh = trimesh.load_mesh(self._morph.file)
+                verts = mesh.vertices * self._morph.scale + np.array(self._morph.pos)
+                faces = mesh.faces
+                # For cloth, we store faces as "elements" (treating them as surface elements)
+                self.instantiate(verts, faces)
+            else:
+                gs.raise_exception(f"Cloth material only supports Mesh morph. Got: {self.morph}.")
         else:
-            gs.raise_exception(f"Unsupported morph: {self.morph}.")
+            # Regular FEM: tetrahedralize mesh
+            if isinstance(self.morph, gs.options.morphs.Sphere):
+                verts, elems = eu.sphere_to_elements(
+                    pos=self._morph.pos,
+                    radius=self._morph.radius,
+                    tet_cfg=self.tet_cfg,
+                )
+            elif isinstance(self.morph, gs.options.morphs.Box):
+                verts, elems = eu.box_to_elements(
+                    pos=self._morph.pos,
+                    size=self._morph.size,
+                    tet_cfg=self.tet_cfg,
+                )
+            elif isinstance(self.morph, gs.options.morphs.Cylinder):
+                verts, elems = eu.cylinder_to_elements()
+            elif isinstance(self.morph, gs.options.morphs.Mesh):
+                verts, elems = eu.mesh_to_elements(
+                    file=self._morph.file,
+                    pos=self._morph.pos,
+                    scale=self._morph.scale,
+                    tet_cfg=self.tet_cfg,
+                )
+            else:
+                gs.raise_exception(f"Unsupported morph: {self.morph}.")
 
-        self.instantiate(*eu.split_all_surface_tets(verts, elems))
+            self.instantiate(*eu.split_all_surface_tets(verts, elems))
 
     def _add_to_solver(self, in_backward=False):
+        from genesis.engine.materials.FEM.cloth import Cloth as ClothMaterial
+
+        is_cloth = isinstance(self.material, ClothMaterial)
+
         if not in_backward:
             self._step_global_added = self._sim.cur_step_global
             gs.logger.info(
@@ -366,25 +412,41 @@ class FEMEntity(Entity):
             )
 
         # Convert to appropriate numpy array types
-        elems_np = self.elems.astype(gs.np_int, copy=False)
         verts_numpy = tensor_to_array(self.init_positions, dtype=gs.np_float)
 
-        self._solver._kernel_add_elements(
-            f=self._sim.cur_substep_local,
-            mat_idx=self._material.idx,
-            mat_mu=self._material.mu,
-            mat_lam=self._material.lam,
-            mat_rho=self._material.rho,
-            mat_friction_mu=self._material.friction_mu,
-            n_surfaces=self._n_surfaces,
-            v_start=self._v_start,
-            el_start=self._el_start,
-            s_start=self._s_start,
-            verts=verts_numpy,
-            elems=elems_np,
-            tri2v=self._surface_tri_np,
-            tri2el=self._surface_el_np,
-        )
+        if is_cloth:
+            # Cloth: add only vertices and surfaces for rendering (no physics computation)
+            gs.logger.info(
+                f"Entity {self.uid} is cloth - adding to FEM solver for rendering only (physics managed by IPC)"
+            )
+            self._solver._kernel_add_cloth_for_rendering(
+                f=self._sim.cur_substep_local,
+                n_surfaces=self._n_surfaces,
+                v_start=self._v_start,
+                s_start=self._s_start,
+                verts=verts_numpy,
+                tri2v=self._surface_tri_np,
+            )
+        else:
+            # Regular FEM: add vertices, elements, and surfaces for physics and rendering
+            elems_np = self.elems.astype(gs.np_int, copy=False)
+            self._solver._kernel_add_elements(
+                f=self._sim.cur_substep_local,
+                mat_idx=self._material.idx,
+                mat_mu=self._material.mu,
+                mat_lam=self._material.lam,
+                mat_rho=self._material.rho,
+                mat_friction_mu=self._material.friction_mu,
+                n_surfaces=self._n_surfaces,
+                v_start=self._v_start,
+                el_start=self._el_start,
+                s_start=self._s_start,
+                verts=verts_numpy,
+                elems=elems_np,
+                tri2v=self._surface_tri_np,
+                tri2el=self._surface_el_np,
+            )
+
         self.active = True
 
     def compute_pressure_field(self):
@@ -718,6 +780,7 @@ class FEMEntity(Entity):
             active=active,
         )
 
+    @assert_muscle
     def set_muscle_group(self, muscle_group):
         """
         Set muscle group index for each element.
@@ -734,6 +797,7 @@ class FEMEntity(Entity):
             muscle_group=muscle_group,
         )
 
+    @assert_muscle
     def set_muscle_direction(self, muscle_direction):
         """
         Set muscle force direction for each element.

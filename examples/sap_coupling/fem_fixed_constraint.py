@@ -1,5 +1,8 @@
 import argparse
 import math
+import os
+import sys
+
 import torch
 import genesis as gs
 from huggingface_hub import snapshot_download
@@ -7,9 +10,11 @@ from huggingface_hub import snapshot_download
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--cpu", action="store_true", default=False)
+    parser.add_argument("-c", "--cpu", action="store_true", default=(sys.platform == "darwin"))
     parser.add_argument("-v", "--vis", action="store_true", default=False)
     args = parser.parse_args()
+
+    n_steps = 150 if "PYTEST_VERSION" not in os.environ else 2
 
     gs.init(backend=gs.cpu if args.cpu else gs.gpu, precision="64")
 
@@ -37,8 +42,9 @@ def main():
     asset_path = snapshot_download(
         repo_type="dataset",
         repo_id="Genesis-Intelligence/assets",
-        revision="69200ef57811078f39c65f1d9e2df679b3b025d7",
+        revision="4d96c3512df4421d4dd3d626055d0d1ebdfdd7cc",
         allow_patterns="cube8.obj",
+        max_workers=1,
     )
     cube = scene.add_entity(
         morph=gs.morphs.Mesh(
@@ -53,16 +59,15 @@ def main():
     verts_idx = [0]
 
     # Run simulation
-    for i in range(150):
+    for i in range(n_steps):
         target_poss = cube.init_positions[verts_idx] + torch.tensor(
             (0.15 * (math.cos(0.04 * i) - 1.0), 0.15 * math.sin(0.04 * i), 0.0)
         )
         cube.set_vertex_constraints(verts_idx=verts_idx, target_poss=target_poss)
         scene.step(update_visualizer=False)
         if args.vis:
-            # FIXME: Non-persistent markers are apparently broken...
             scene.visualizer.context.draw_debug_sphere(
-                pos=target_poss.squeeze(), radius=0.01, color=(1, 0, 1, 0.8), persistent=True
+                pos=target_poss.squeeze(), radius=0.01, color=(1, 0, 1, 0.8), persistent=False
             )
             scene.visualizer.update(force=False, auto=True)
 

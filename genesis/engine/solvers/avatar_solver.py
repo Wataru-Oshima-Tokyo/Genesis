@@ -1,7 +1,7 @@
 import numpy as np
 import gstaichi as ti
+
 import genesis as gs
-from genesis.engine.entities import AvatarEntity
 from genesis.engine.states.solvers import AvatarSolverState
 
 from .base_solver import Solver
@@ -91,7 +91,7 @@ class AvatarSolver(RigidSolver):
         self.collider.detection()
 
     def get_state(self, f):
-        if self.is_active():
+        if self.is_active:
             state = AvatarSolverState(self.scene)
             self._kernel_get_state(
                 state.qpos,

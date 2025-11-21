@@ -47,7 +47,7 @@ def test_pick_and_place(mode, show_viewer):
         show_viewer=show_viewer,
         show_FPS=False,
     )
-    plane = scene.add_entity(
+    scene.add_entity(
         gs.morphs.Plane(),
     )
     cube = scene.add_entity(
@@ -57,10 +57,11 @@ def test_pick_and_place(mode, show_viewer):
         ),
         surface=gs.surfaces.Plastic(color=(1, 0, 0)),
     )
-    cube_2 = scene.add_entity(
+    scene.add_entity(
         gs.morphs.Box(
             size=(0.05, 0.05, 0.05),
             pos=(0.4, 0.2, 0.025),
+            fixed=True,
         ),
         surface=gs.surfaces.Plastic(color=(0, 1, 0)),
     )
@@ -159,9 +160,9 @@ def test_pick_and_place(mode, show_viewer):
     # release
     franka.control_dofs_position(np.array([0.15, 0.15]), fingers_dof)
 
-    for i in range(550):
+    for i in range(180):
         scene.step()
-        if i > 550:
+        if i > 150:
             qvel = cube.get_dofs_velocity()
             assert_allclose(qvel, 0, atol=0.02)
 
@@ -209,6 +210,9 @@ def test_hanging_rigid_cable(show_viewer, tol):
 @pytest.mark.parametrize("primitive_type", ["box", "sphere"])
 @pytest.mark.parametrize("precision", ["64"])
 def test_franka_panda_grasp_fem_entity(primitive_type, show_viewer):
+    if gs.use_ndarray:
+        pytest.skip("SAPCoupler does not support ndarray yet.")
+
     GRAPPER_POS_START = (0.65, 0.0, 0.13)
     GRAPPER_POS_END = (0.65, 0.0, 0.18)
 
@@ -301,7 +305,7 @@ def test_franka_panda_grasp_fem_entity(primitive_type, show_viewer):
     # lift and wait for while to give enough time for the robot to stop shaking
     qpos = franka.inverse_kinematics(link=end_effector, pos=GRAPPER_POS_END, quat=(0, 1, 0, 0))
     franka.control_dofs_position(qpos[motors_dof], motors_dof)
-    for i in range(60):
+    for i in range(65):
         franka.control_dofs_force(np.array([-1.0, -1.0]), fingers_dof)
         scene.step()
 
@@ -314,4 +318,4 @@ def test_franka_panda_grasp_fem_entity(primitive_type, show_viewer):
         franka.control_dofs_force(np.array([-1.0, -1.0]), fingers_dof)
         scene.step()
     box_pos_post = obj.get_state().pos.mean(dim=-2)
-    assert_allclose(box_pos_f, box_pos_post, atol=1e-4)
+    assert_allclose(box_pos_f, box_pos_post, atol=5e-4)

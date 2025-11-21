@@ -49,7 +49,7 @@ class ParticleEntity(Entity):
     idx : int
         Index of this entity in the simulation.
     particle_start : int
-        Global index offset for this entity’s particles in the solver.
+        Global index offset for this entity's particles in the solver.
     vvert_start : int, optional
         Global index offset for vertex-based rendering, used for skinning.
     vface_start : int, optional
@@ -160,8 +160,8 @@ class ParticleEntity(Entity):
         elif batched and tensor.ndim == len(tensor_shape) - 1:
             for i in range(len(batch_shape)):
                 if len(tensor) != tensor_shape[i]:
-                    tensor = tensor.reshape((*tensor_shape[:i], 1, *tensor_shape[(i + 1) :])).expand(tensor_shape)
                     break
+            tensor = tensor.reshape((*tensor_shape[:i], 1, *tensor_shape[(i + 1) :])).expand(tensor_shape)
         if tensor.shape != tensor_shape:
             gs.raise_exception(f"Invalid tensor shape {tensor.shape} (expected {tensor_shape}).")
 
@@ -275,15 +275,12 @@ class ParticleEntity(Entity):
 
                 sampler = self.sampler
                 if "pbs" in sampler:
-                    try:
-                        particles_i = pu.trimesh_to_particles_pbs(
-                            mesh=mesh_i,
-                            p_size=self._particle_size,
-                            sampler=sampler,
-                        )
-                    except gs.GenesisException:
-                        sampler = "random"
-                if "pbs" not in sampler:
+                    particles_i = pu.trimesh_to_particles_pbs(
+                        mesh=mesh_i,
+                        p_size=self._particle_size,
+                        sampler=sampler,
+                    )
+                else:
                     particles_i = pu.trimesh_to_particles_simple(
                         mesh=mesh_i,
                         p_size=self._particle_size,
@@ -531,7 +528,7 @@ class ParticleEntity(Entity):
 
     def set_position(self, value, envs_idx=None, *, unsafe=False):
         """
-        Set the position of all the particles individually, or the center of masswrt the initial configuration of the
+        Set the position of all the particles individually, or the center of mass wrt the initial configuration of the
         particles as a whole.
 
         Parameters

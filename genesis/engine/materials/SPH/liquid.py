@@ -1,5 +1,7 @@
 import gstaichi as ti
 
+import genesis as gs
+
 from .base import Base
 
 
@@ -11,17 +13,18 @@ class Liquid(Base):
     Parameters
     ----------
     rho: float, optional
-        The density (kg/m^3) the material tends to maintain in equilibrium (i.e., the “rest” or undeformed state). Default is 1000.
+        The density (kg/m^3) the material tends to maintain in equilibrium (i.e., the "rest" or undeformed state). Default is 1000.
     stiffness: float, optional
         State stiffness (N/m^2). A material constant controlling how pressure increases with compression. Default is 50000.0.
     exponent: float, optional
         State exponent. Controls how nonlinearly pressure scales with density. Larger values mean stiffer response to compression. Default is 7.0.
     mu: float, optional
-        The vscosity of the liquid. A measure of the internal friction of the fluid or material. Default is 0.005
+        The viscosity of the liquid. A measure of the internal friction of the fluid or material. Default is 0.005
     gamma: float, optional
-        The surface tension of the liquid. Controls how strongly the material “clumps” together at boundaries. Default is 0.01
+        The surface tension of the liquid. Controls how strongly the material "clumps" together at boundaries. Default is 0.01
     sampler: str, optional
-        Particle sampler ('pbs', 'regular', 'random'). Default is 'pbs'.
+        Particle sampler ('pbs', 'regular', 'random'). Note that 'pbs' is only supported on Linux for now. Defaults to
+        'pbs' on supported platforms, 'random' otherwise.
     """
 
     def __init__(
@@ -31,8 +34,11 @@ class Liquid(Base):
         exponent=7.0,
         mu=0.005,
         gamma=0.01,
-        sampler="pbs",
+        sampler=None,
     ):
+        if sampler is None:
+            sampler = "pbs" if gs.platform == "Linux" else "random"
+
         super().__init__(sampler)
 
         self._rho = rho
@@ -43,7 +49,7 @@ class Liquid(Base):
 
     @property
     def rho(self):
-        """The density (kg/m^3) the material tends to maintain in equilibrium (i.e., the “rest” or undeformed state)."""
+        """The density (kg/m^3) the material tends to maintain in equilibrium (i.e., the "rest" or undeformed state)."""
         return self._rho
 
     @property
@@ -58,10 +64,10 @@ class Liquid(Base):
 
     @property
     def mu(self):
-        """The vscosity of the liquid. A measure of the internal friction of the fluid or material."""
+        """The viscosity of the liquid. A measure of the internal friction of the fluid or material."""
         return self._mu
 
     @property
     def gamma(self):
-        """The surface tension of the liquid. Controls how strongly the material “clumps” together at boundaries."""
+        """The surface tension of the liquid. Controls how strongly the material "clumps" together at boundaries."""
         return self._gamma
