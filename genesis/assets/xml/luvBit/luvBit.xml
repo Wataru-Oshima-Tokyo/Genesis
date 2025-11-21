@@ -8,7 +8,7 @@
       <joint axis="0 1 0" damping="0.1" armature="0.01" frictionloss="0.2"/>
        <motor ctrlrange="-23.7 23.7"/>
       <default class="left_hip_yaw_motor">
-        <joint axis="0 0 1" range="-1.0472 0.349066"/>
+        <joint axis="0 0 -1" range="-0.349066 1.0472 "/>
       </default>
       <default class="left_hip_roll_motor">
         <joint axis="1 0 0" range="-0.698132 0.349066"/>
@@ -23,7 +23,7 @@
         <joint range="-1.0472 1.39626"/>
       </default>
       <default class="right_hip_yaw_motor">
-        <joint axis="0 0 1" range="-0.349066 1.0472"/>
+        <joint axis="0 0 -1" range="-1.0472 0.349066"/>
       </default>
       <default class="right_hip_roll_motor">
         <joint axis="1 0 0" range="-0.349066 0.698132"/>
@@ -70,7 +70,7 @@
   <worldbody>
 
     <body name="base_link"
-          pos="0 0 0.30"
+          pos="0 0 0.4"
           childclass="luvbit">
       
 
