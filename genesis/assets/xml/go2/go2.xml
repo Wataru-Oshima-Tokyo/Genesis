@@ -71,8 +71,11 @@
       <geom mesh="base_3" material="white" class="visual"/>
       <geom mesh="base_4" material="gray" class="visual"/>
       <geom size="0.1881 0.04675 0.057" type="box" class="collision"/>
-      <geom size="0.05 0.045" pos="0.285 0 0.01" type="cylinder" class="collision"/>
-      <geom size="0.047" pos="0.293 0 -0.06" class="collision"/>
+      <body name="head" pos="0.285 0 0">
+        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+        <geom name="head_cylinder" size="0.05 0.045" pos="0 0 0.01" type="cylinder" class="collision" density="0"/>
+        <geom name="head_sphere" size="0.047" pos="0.008 0 -0.06" class="collision" density="0"/>
+      </body>
       <site name="imu" pos="-0.02557 0 0.04232"/>
 
       <body name="FR_hip" pos="0.1934 -0.0465 0">

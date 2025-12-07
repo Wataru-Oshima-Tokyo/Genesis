@@ -255,7 +255,7 @@ def stairs_terrain(terrain, step_width, step_height):
     return terrain
 
 
-def pyramid_stairs_terrain(terrain, step_width, step_height, platform_size=1.0):
+def pyramid_stairs_terrain(terrain, step_width, step_height, platform_size=1.5):
     """
     Generate stairs
 
@@ -349,7 +349,7 @@ def stepping_stones_terrain(terrain, stone_size, stone_distance, max_height, pla
 
 def stamble_terrain(
         terrain,
-        height_range_m = (0.10, 0.25),
+        height_range_m = (0.10, 0.12),
         patch_size_m=0.4,
         gap_m=0.1):   
     """

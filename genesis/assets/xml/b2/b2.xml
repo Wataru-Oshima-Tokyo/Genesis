@@ -57,12 +57,15 @@
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="logo_left"/>
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="logo_right"/>
       <geom pos="0.34218 0 0.17851" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.15 0.15 0.15 1" mesh="unitree_ladar"/>
-      <geom size="0.076 0.08" pos="0.34218 0 0.15851" type="cylinder" rgba="0.15 0.15 0.15 1" class="collision"/>
       <geom pos="0.841724 -4.57659e-06 0.130379" quat="0.00244632 3.13845e-06 0.999997 1.29099e-06" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="f_dc_link"/>
       <geom pos="-0.378319 0.000200109 -0.379902" quat="-1.30076e-06 -0.708662 5.35065e-07 0.705548" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="r_dc_link"/>
       <geom pos="0 -0.02341 0.04927" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="fake_imu_link"/>
-      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="fake_head_Link"/>
-      <geom size="0.02 0.06 0.07" pos="0.41 0 0.005" type="box" rgba="0 0 0 1" class="collision"/>
+      <body name="head" pos="0 0 0">
+        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="fake_head_Link"/>
+        <geom size="0.076 0.08" pos="0.34218 0 0.15851" type="cylinder" rgba="0.15 0.15 0.15 1" class="collision" density="0"/>
+        <geom size="0.02 0.06 0.07" pos="0.41 0 0.005" type="box" rgba="0 0 0 1" class="collision" density="0"/>
+      </body>
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="fake_tail_link"/>
       <geom size="0.0125 0.06 0.07" pos="-0.405 0 0.005" type="box" rgba="0 0 0 1" class="collision"/>
       <geom pos="0.84158 -0.0134347 -0.0134347" quat="-3.89602e-06 1.29867e-06 0.707107 -0.707107" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="f_oc_link"/>

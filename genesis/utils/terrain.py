@@ -2,7 +2,7 @@ import os
 import math
 import pickle as pkl
 from pathlib import Path
-
+import random
 import fast_simplification
 import numpy as np
 import trimesh
@@ -113,10 +113,11 @@ def parse_terrain(morph: Terrain, surface):
             elif subterrain_type == "discrete_obstacles_terrain":
                 subterrain = isaacgym_terrain_utils.discrete_obstacles_terrain(
                     new_subterrain,
-                    max_height=params.get("max_height", 0.05),
-                    min_size=params.get("min_size", 1.0),
-                    max_size=params.get("max_size", 5.0),
-                    num_rects=params.get("num_rects", 20),
+                    slope=-0.2,
+                    pit_size_m=0.2,
+                    pit_gap_m=0.4,
+                    pit_depth_m=0.2,
+                    platform_size_m=0.0, 
                 )
             elif subterrain_type == "wave_terrain":
                 subterrain = isaacgym_terrain_utils.wave_terrain(
@@ -144,6 +145,68 @@ def parse_terrain(morph: Terrain, surface):
                     max_height=params.get("max_height", 0.2),
                     platform_size=params.get("platform_size", 0.0),
                 )
+            elif subterrain_type == "stamble_terrain":
+                height_range_m = (0.10, 0.12)
+                subterrain = isaacgym_terrain_utils.stamble_terrain(
+                    new_subterrain,
+                    height_range_m=height_range_m,
+                    patch_size_m=params.get("patch_size_m", 0.4),
+                    gap_m=params.get("gap_m", 0.1),
+                )
+            elif subterrain_type == "pyramid_down_sloped_terrain":
+                slope = random.uniform(-0.1, -0.3)
+                subterrain = isaacgym_terrain_utils.pyramid_sloped_terrain(
+                    new_subterrain,
+                    slope=slope,
+                )
+            elif subterrain_type == "pyramid_down_stairs_terrain":
+                step_height = random.uniform(-0.15, -0.2)
+                step_width = random.uniform(0.3, 0.4)
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width= step_width,
+                    step_height= step_height,
+                )
+            elif subterrain_type == "pyramid_steep_down_stairs_terrain":
+                step_height = 0.25 
+                step_width = 0.25
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width= step_width,
+                    step_height= step_height,
+                )
+            elif subterrain_type == "pyramid_steep_up_stairs_terrain":
+                step_height = 0.3 
+                step_width = 0.25
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width= step_width,
+                    step_height= step_height,
+                )
+            elif subterrain_type == "pyramid_up_stairs_terrain":
+                step_height = random.uniform(0.15, 0.2)
+                step_width = random.uniform(0.3, 0.4)
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width= step_width,
+                    step_height= step_height,
+                )
+            elif subterrain_type == "pyramid_shallow_down_stairs_terrain":
+                step_height = random.uniform(-0.05, -0.13)
+                step_width = random.uniform(0.3, 0.4)
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width= step_width,
+                    step_height= step_height,
+                )   
+            elif subterrain_type == "pyramid_shallow_up_stairs_terrain":
+                step_height = random.uniform(0.05, 0.13)
+                step_width = random.uniform(0.3, 0.4)
+                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
+                    new_subterrain,
+                    step_width= step_width,
+                    step_height= step_height,
+                )       
             else:
                 gs.raise_exception(f"Unsupported subterrain type: {subterrain_type}")
 

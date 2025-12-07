@@ -1148,7 +1148,7 @@ class Terrain(Morph):
     subterrain_types: Any = [
         ["flat_terrain", "random_uniform_terrain", "stepping_stones_terrain", "stamble_terrain", "blocky_terrain", "shallow_stamble_terrain", "shallow_blocky_terrain"],
         ["pyramid_sloped_terrain","pyramid_down_sloped_terrain", "discrete_obstacles_terrain", "shallow_discrete_obstacles_terrain", "wave_terrain"],
-        ["random_uniform_terrain", "pyramid_stairs_terrain", "pyramid_down_stairs_terrain", "pyramid_shallow_down_stairs_terrain", "pyramid_steep_down_stairs_terrain", "sloped_terrain"],
+        ["random_uniform_terrain", "pyramid_stairs_terrain", "pyramid_down_stairs_terrain", "pyramid_up_stairs_terrain", "pyramid_steep_up_stairs_terrain", "pyramid_shallow_up_stairs_terrain", "pyramid_shallow_down_stairs_terrain", "pyramid_steep_down_stairs_terrain", "sloped_terrain"],
     ]
     height_field: Any = None
     name: str | None = None
@@ -1190,6 +1190,9 @@ class Terrain(Morph):
             "blocky_terrain",
             "shallow_stamble_terrain",
             "shallow_blocky_terrain",
+            "pyramid_up_stairs_terrain",
+            "pyramid_steep_up_stairs_terrain",
+            "pyramid_shallow_up_stairs_terrain",
             "debug_terrain"
         ]
 
@@ -1281,6 +1284,22 @@ class Terrain(Morph):
                 "step_height": -0.1,
             },
             "pyramid_down_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_steep_down_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_up_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_steep_up_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "pyramid_shallow_up_stairs_terrain": {
                 "step_width": 0.75,
                 "step_height": -0.1,
             },
