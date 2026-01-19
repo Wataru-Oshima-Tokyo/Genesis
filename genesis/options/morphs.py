@@ -1188,9 +1188,9 @@ class Terrain(Morph):
     vertical_scale: float = 0.005  # meter height of each step in the subterrain
     uv_scale: float = 1.0
     subterrain_types: Any = [
-        ["flat_terrain", "random_uniform_terrain", "stepping_stones_terrain", "stamble_terrain", "blocky_terrain", "shallow_stamble_terrain", "shallow_blocky_terrain"],
+        ["flat_terrain", "random_uniform_terrain", "stepping_stones_terrain", "stamble_terrain", "blocky_terrain", "shallow_stamble_terrain", "shallow_blocky_terrain", "debug_terrain"],
         ["pyramid_sloped_terrain", "discrete_obstacles_terrain", "shallow_discrete_obstacles_terrain", "wave_terrain"],
-        ["random_uniform_terrain", "overhang_staris_terrain" "pyramid_stairs_terrain", "pyramid_stairs_terrain_ssw", "pyramid_steep_stairs_terrain_ssw" ,"pyramid_shallow_stairs_terrain", "sloped_terrain"],
+        ["random_uniform_terrain",  "pyramid_overhang_stairs_terrain" "pyramid_stairs_terrain", "pyramid_stairs_terrain_ssw", "pyramid_steep_stairs_terrain_ssw" ,"pyramid_shallow_stairs_terrain", "sloped_terrain"],
     ]
     height_field: Any = None
     name: str | None = None
@@ -1229,10 +1229,11 @@ class Terrain(Morph):
             "pyramid_steep_stairs_terrain_ssw",
             "stepping_stones_terrain",
             "stamble_terrain",
+            "pyramid_overhang_stairs_terrain",
             "blocky_terrain",
             "shallow_stamble_terrain",
+            "debug_terrain",
             "shallow_blocky_terrain",
-            "debug_terrain"
         ]
 
         if self.height_field is not None:
@@ -1318,6 +1319,10 @@ class Terrain(Morph):
                 "step_width": 0.75,
                 "step_height": -0.1,
             },
+            "pyramid_overhang_stairs_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
             "pyramid_stairs_terrain": {
                 "step_width": 0.75,
                 "step_height": -0.1,
@@ -1343,6 +1348,10 @@ class Terrain(Morph):
                 "step_height": -0.1,
             },
             "stamble_terrain": {
+                "step_width": 0.75,
+                "step_height": -0.1,
+            },
+            "debug_terrain": {
                 "step_width": 0.75,
                 "step_height": -0.1,
             },
