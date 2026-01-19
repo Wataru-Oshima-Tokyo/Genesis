@@ -10,8 +10,7 @@ from OpenGL.GL import *
 import genesis as gs
 
 from .constants import RenderFlags
-from .renderer import Renderer
-from .shader_program import ShaderProgram, ShaderProgramCache
+from .shader_program import ShaderProgram
 
 
 MODULE_DIR = os.path.dirname(__file__)
@@ -170,10 +169,12 @@ class OffscreenRenderer(object):
             if self._platform.supports_framebuffers():
                 flags |= RenderFlags.OFFSCREEN
                 retval = renderer.render(scene, flags, seg_node_map)
+                assert retval is not None
             else:
                 if flags & RenderFlags.ENV_SEPARATE:
                     gs.raise_exception("'env_separate_rigid=True' not supported on this platform.")
-                renderer.render(scene, flags, seg_node_map)
+                result = renderer.render(scene, flags, seg_node_map)
+                assert result is not None
                 glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
                 glReadBuffer(GL_FRONT)
                 if depth:
@@ -193,6 +194,7 @@ class OffscreenRenderer(object):
             retval = ()
 
         if normal:
+
             class CustomShaderCache:
                 def __init__(self):
                     self.program = None
@@ -265,8 +267,9 @@ class OffscreenRenderer(object):
             from OpenGL.GL import glGetString, GL_RENDERER
 
             renderer = glGetString(GL_RENDERER).decode()
-            self._is_software = "llvmpipe" in renderer
-        except:
+            gs.logger.debug(f"Using offscreen rendering OpenGL device: {renderer}")
+            self._is_software = any(e in renderer for e in ("llvmpipe", "Apple Software Renderer"))
+        except Exception:
             pass
         if self._is_software:
             gs.logger.info(

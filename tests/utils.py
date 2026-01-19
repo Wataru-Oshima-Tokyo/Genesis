@@ -11,12 +11,15 @@ from datetime import datetime
 from functools import cache
 from itertools import chain
 from pathlib import Path
+from types import GeneratorType
 from typing import Literal, Sequence
 
 import cpuinfo
 import numpy as np
 import mujoco
 import torch
+from httpx import HTTPError as HTTPXError
+from httpcore import TimeoutException as HTTPTimeoutException
 from huggingface_hub import snapshot_download
 from PIL import Image, UnidentifiedImageError
 from requests.exceptions import HTTPError
@@ -32,8 +35,8 @@ from genesis.options.morphs import URDF_FORMAT, MJCF_FORMAT, MESH_FORMATS, GLTF_
 REPOSITY_URL = "Genesis-Embodied-AI/Genesis"
 DEFAULT_BRANCH_NAME = "main"
 
-HUGGINGFACE_ASSETS_REVISION = "16e4eae0024312b84518f4b555dd630d6b34095a"
-HUGGINGFACE_SNAPSHOT_REVISION = "bfd02a635579cbd5aefa7027df54a433f8ad1915"
+HUGGINGFACE_ASSETS_REVISION = "c50bfe3e354e105b221ef4eb9a79504650709dd2"
+HUGGINGFACE_SNAPSHOT_REVISION = "17d79e7627479ef836524d14449e2fdc4282973d"
 
 MESH_EXTENSIONS = (".mtl", *MESH_FORMATS, *GLTF_FORMATS, *USD_FORMATS)
 IMAGE_EXTENSIONS = (".png", ".jpg")
@@ -236,7 +239,7 @@ def get_hf_dataset(
 
             if not has_files:
                 raise HTTPError("No file downloaded.")
-        except (HTTPError, FileNotFoundError, RuntimeError):
+        except (HTTPTimeoutException, HTTPXError, HTTPError, FileNotFoundError, RuntimeError):
             if i == num_retry - 1:
                 raise
             print(f"Failed to download assets from HuggingFace dataset. Trying again in {retry_delay}s...")
@@ -261,6 +264,8 @@ def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None, err_msg=
     # Convert input arguments as numpy arrays
     args = [actual, desired]
     for i, arg in enumerate(args):
+        if isinstance(arg, (GeneratorType, map)):
+            arg = tuple(arg)
         if isinstance(arg, (tuple, list)):
             arg = np.stack([tensor_to_array(val) for val in arg], axis=0)
         args[i] = tensor_to_array(arg)
@@ -273,8 +278,11 @@ def assert_allclose(actual, desired, *, atol=None, rtol=None, tol=None, err_msg=
     # First, try to broadcast both matrices. Then it is does not work, squeeze them before trying again.
     try:
         args = np.broadcast_arrays(*args)
-    except ValueError:
-        args = np.broadcast_arrays(*map(np.squeeze, args))
+    except ValueError as e:
+        try:
+            args = np.broadcast_arrays(*map(np.squeeze, args))
+        except ValueError:
+            raise e
 
     np.testing.assert_allclose(*args, atol=atol, rtol=rtol, err_msg=err_msg)
 
@@ -294,7 +302,7 @@ def init_simulators(gs_sim, mj_sim=None, qpos=None, qvel=None):
         gs_robot.set_qpos(qpos)
     if qvel is not None:
         gs_robot.set_dofs_velocity(qvel)
-    # TODO: This should be moved in `set_state`, `set_qpos`, `set_dofs_position`, `set_dofs_velocity`
+
     gs_sim.rigid_solver.dofs_state.qf_constraint.fill(0.0)
     gs_sim.rigid_solver._func_forward_dynamics()
     gs_sim.rigid_solver._func_constraint_force()
@@ -611,7 +619,7 @@ def check_mujoco_model_consistency(
     tol: float,
 ):
     # Delay import to enable run benchmarks for old Genesis versions that do not have this method
-    from genesis.engine.solvers.rigid.rigid_solver_decomp import _sanitize_sol_params
+    from genesis.engine.solvers.rigid.rigid_solver import _sanitize_sol_params
 
     # Get mapping between Mujoco and Genesis
     gs_maps, mj_maps = _get_model_mappings(gs_sim, mj_sim, joints_name, bodies_name)
@@ -706,16 +714,20 @@ def check_mujoco_model_consistency(
     mj_dof_armature = mj_sim.model.dof_armature
     assert_allclose(gs_dof_armature[gs_dofs_idx], mj_dof_armature[mj_dofs_idx], tol=tol)
 
-    # FIXME: 1 stiffness per joint in Mujoco, 1 stiffness per DoF in Genesis
+    # TODO: 1 stiffness per joint in Mujoco, 1 stiffness per DoF in Genesis
     gs_dof_stiffness = gs_sim.rigid_solver.dofs_info.stiffness.to_numpy()
     mj_dof_stiffness = mj_sim.model.jnt_stiffness
-    # assert_allclose(gs_dof_stiffness[gs_dofs_idx], mj_dof_stiffness[mj_joints_idx], tol=tol)
+    if all(joint.n_dofs == 1 for joint in gs_sim.rigid_solver.joints):
+        assert_allclose(gs_dof_stiffness[gs_dofs_idx], mj_dof_stiffness[mj_joints_idx], tol=tol)
 
     gs_dof_invweight0 = gs_sim.rigid_solver.dofs_info.invweight.to_numpy()
     mj_dof_invweight0 = mj_sim.model.dof_invweight0
     assert_allclose(gs_dof_invweight0[gs_dofs_idx], mj_dof_invweight0[mj_dofs_idx], tol=tol)
 
-    # TODO: Genesis does not support frictionloss contraint at dof level for now
+    gs_dof_dof_frictionloss = gs_sim.rigid_solver.dofs_info.frictionloss.to_numpy()
+    mj_dof_dof_frictionloss = mj_sim.model.dof_frictionloss
+    assert_allclose(gs_dof_dof_frictionloss[gs_dofs_idx], mj_dof_dof_frictionloss[mj_dofs_idx], tol=tol)
+
     gs_joint_solparams = np.array([joint.sol_params.cpu() for entity in gs_sim.entities for joint in entity.joints])
     mj_joint_solparams = np.concatenate((mj_sim.model.jnt_solref, mj_sim.model.jnt_solimp), axis=-1)
     _sanitize_sol_params(
@@ -897,8 +909,19 @@ def check_mujoco_data_consistency(
                 gs_sim.rigid_solver.constraint_solver.prev_cost[0] - gs_sim.rigid_solver.constraint_solver.cost[0]
             )
             mj_improvement = mj_sim.data.solver.improvement[mj_iter]
-            # FIXME: This is too challenging to match because of compounding of errors
-            # assert_allclose(gs_improvement, mj_improvement, tol=tol)
+
+            # Note that 'constraint_solver.active' refers to whether the quadratic part of a constraint is active,
+            # unlike Mujoco that defines 'nactive' as the number of active constraints regardless of its type.
+            # In practice, this only makes a difference if frictionloss is enabled.
+            gs_nactive = sum(gs_sim.rigid_solver.constraint_solver.active.to_numpy()[:gs_n_constraints, 0])
+            mj_native = mj_sim.data.solver.nactive[mj_iter]
+            if not (gs_sim.rigid_solver.dofs_info.frictionloss.to_numpy() > gs.EPS).any():
+                assert mj_native == gs_nactive
+
+            # FIXME: For some reason, mujoco is sometimes (seemingful) wrongly reporting 0...
+            if mj_improvement > gs.EPS:
+                # Must relax tolerance because of compounding of errors.
+                assert_allclose(gs_improvement, mj_improvement, tol=tol * 1e2)
 
         if qvel_prev is not None:
             gs_efc_vel = gs_jac @ qvel_prev
@@ -1027,8 +1050,8 @@ def simulate_and_check_mujoco_consistency(gs_sim, mj_sim, qpos=None, qvel=None, 
         #     gs_sim.scene.visualizer.update()
 
 
-def rgb_array_to_png_bytes(rgb_arr: np.ndarray) -> bytes:
-    img = Image.fromarray(rgb_arr)
+def rgb_array_to_png_bytes(rgb_arr: np.ndarray | torch.Tensor) -> bytes:
+    img = Image.fromarray(tensor_to_array(rgb_arr))
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     return buffer.getvalue()

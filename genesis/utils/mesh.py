@@ -1,11 +1,9 @@
 import hashlib
-import json
 import marshal
 import math
 import os
 import pickle as pkl
 import platform
-from itertools import chain
 from functools import lru_cache
 from pathlib import Path
 
@@ -39,6 +37,7 @@ CVX_PATH_QUANTIZE_FACTOR = 1e-6
 Y_UP_TRANSFORM = np.asarray(  # translation on the bottom row
     [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, -1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]], dtype=np.float32
 )
+DEFAULT_PLANE_TEXTURE_PATH = "textures/checker.png"  # use checkerboard texture by default
 
 
 class MeshInfo:
@@ -218,12 +217,10 @@ def surface_uvs_to_trimesh_visual(surface, uvs=None, n_verts=None):
         else:
             # fall back to color texture
             visual = trimesh.visual.ColorVisuals(vertex_colors=np.tile(texture.mean_color(), [n_verts, 1]))
-
     elif isinstance(texture, gs.textures.ColorTexture):
         if n_verts is None:
             gs.raise_exception("n_verts is required for color texture.")
         visual = trimesh.visual.ColorVisuals(vertex_colors=np.tile(np.array(texture.color), [n_verts, 1]))
-
     else:
         gs.raise_exception("Cannot get texture when generating trimesh visual.")
 
@@ -259,7 +256,7 @@ def convex_decompose(mesh, coacd_options):
             else:
                 # if cached mesh scale is invalid, ignore cache
                 is_cached_loaded = False
-        except (EOFError, ModuleNotFoundError, pkl.UnpicklingError, TypeError):
+        except (EOFError, ModuleNotFoundError, pkl.UnpicklingError, TypeError, MemoryError):
             gs.logger.info("Ignoring corrupted cache.")
 
     if not is_cached_loaded:
@@ -473,8 +470,12 @@ def postprocess_collision_geoms(
 
 def parse_mesh_trimesh(path, group_by_material, scale, surface):
     meshes = []
-    for _, mesh in trimesh.load(path, force="scene", group_material=group_by_material, process=False).geometry.items():
-        meshes.append(gs.Mesh.from_trimesh(mesh=mesh, scale=scale, surface=surface, metadata={"mesh_path": path}))
+    scene = trimesh.load(path, force="scene", group_material=group_by_material, process=False)
+    for tmesh in scene.geometry.values():
+        if not isinstance(tmesh, trimesh.Trimesh):
+            gs.raise_exception(f"Mesh type not supported: {path}")
+        mesh = gs.Mesh.from_trimesh(mesh=tmesh, scale=scale, surface=surface, metadata={"mesh_path": path})
+        meshes.append(mesh)
     return meshes
 
 
@@ -502,10 +503,9 @@ def tonemapped(image):
 def create_texture(image, factor, encoding):
     if image is not None:
         return gs.textures.ImageTexture(image_array=image, image_color=factor, encoding=encoding)
-    elif factor is not None:
+    if factor is not None:
         return gs.textures.ColorTexture(color=factor)
-    else:
-        return None
+    return None
 
 
 def apply_transform(transform, positions, normals=None):
@@ -565,7 +565,10 @@ def create_frame(
 
 def create_camera_frustum(camera, color):
     # camera
-    camera_mesh = trimesh.load(os.path.join(get_src_dir(), "assets", "meshes", "camera/camera.obj"))
+    camera_mesh = trimesh.load(os.path.join(get_src_dir(), "assets", "meshes", "camera/camera.glb"), force="mesh")
+    camera_mesh.visual = camera_mesh.visual.to_color()
+    camera_mesh.apply_translation([0.0, 0.0, 1.0])
+    camera_mesh.apply_scale(0.05)
 
     # frustum
     near_half_height = camera.near * np.tan(np.deg2rad(camera.fov / 2))
@@ -605,9 +608,7 @@ def create_camera_frustum(camera, color):
 
     # Create the frustum mesh
     frustum_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    frustum_mesh.visual = trimesh.visual.ColorVisuals(
-        vertex_colors=np.tile(np.asarray(color, dtype=np.float32), (len(frustum_mesh.vertices), 1))
-    )
+    frustum_mesh.visual.vertex_colors = np.asarray(color, dtype=np.float32)
     return trimesh.util.concatenate([camera_mesh, frustum_mesh])
 
 
@@ -890,7 +891,14 @@ def create_box(extents=None, color=(1.0, 1.0, 1.0, 1.0), bounds=None, wireframe=
     return mesh
 
 
-def create_plane(normal=(0.0, 0.0, 1.0), plane_size=(1e3, 1e3), tile_size=(1, 1), color=None):
+def create_plane(
+    normal=(0.0, 0.0, 1.0), plane_size=(1e3, 1e3), tile_size=(1, 1), color_or_texture=DEFAULT_PLANE_TEXTURE_PATH
+):
+    if isinstance(color_or_texture, str):
+        color, texture_path = None, color_or_texture
+    else:
+        color, texture_path = color_or_texture, None
+
     thickness = 1e-2  # for safety
     mesh = trimesh.creation.box(extents=[plane_size[0], plane_size[1], thickness])
     mesh.vertices[:, 2] -= thickness / 2
@@ -912,7 +920,8 @@ def create_plane(normal=(0.0, 0.0, 1.0), plane_size=(1e3, 1e3), tile_size=(1, 1)
     vmesh = trimesh.Trimesh(verts, faces, process=False)
     vmesh.vertices[:, 2] -= thickness / 2
     vmesh.vertices = gu.transform_by_R(vmesh.vertices, gu.z_up_to_R(np.asarray(normal, dtype=np.float32)))
-    if color is None:  # use checkerboard texture
+
+    if texture_path is not None:
         n_tile_x, n_tile_y = plane_size[0] / tile_size[0], plane_size[1] / tile_size[1]
         vmesh.visual = trimesh.visual.TextureVisuals(
             uv=np.array(
@@ -927,7 +936,7 @@ def create_plane(normal=(0.0, 0.0, 1.0), plane_size=(1e3, 1e3), tile_size=(1, 1)
                 dtype=np.float32,
             ),
             material=trimesh.visual.material.SimpleMaterial(
-                image=Image.open(os.path.join(get_assets_dir(), "textures/checker.png")),
+                image=Image.open(os.path.join(get_assets_dir(), texture_path)),
             ),
         )
     else:

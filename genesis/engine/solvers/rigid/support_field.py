@@ -9,16 +9,17 @@ import genesis.utils.geom as gu
 import genesis.utils.array_class as array_class
 
 if TYPE_CHECKING:
-    from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
+    from genesis.engine.solvers.rigid.rigid_solver import RigidSolver
 
 
 class SupportField:
-    def __init__(self, rigid_solver: "RigidSolver") -> None:
+    def __init__(self, rigid_solver: "RigidSolver", is_active: bool = True) -> None:
         self.solver = rigid_solver
+        self._is_active = is_active
 
         self._support_res = 180
         if self.solver._enable_collision:
-            self._compute_support()
+            self._init_support()
 
     def _get_direction_grid(self):
         support_res = self._support_res
@@ -35,7 +36,13 @@ class SupportField:
         v = np.stack((x, y, z), axis=-1)
         return v
 
-    def _compute_support(self) -> None:
+    def _init_support(self) -> None:
+        if not self.is_active:
+            self._support_field_info = array_class.get_support_field_info(
+                self.solver.n_geoms, 0, support_res=self._support_res
+            )
+            return
+
         v = self._get_direction_grid()
         v1 = v.reshape([-1, 3])
         num_v = len(v1)
@@ -74,9 +81,8 @@ class SupportField:
             support_vid = np.zeros([1], dtype=gs.np_int)
             support_cell_start = np.zeros([1], dtype=gs.np_int)
 
-        n_support_cells = start
         self._support_field_info = array_class.get_support_field_info(
-            self.solver.n_geoms, n_support_cells, support_res=self._support_res
+            self.solver.n_geoms, n_support_cells=start, support_res=self._support_res
         )
 
         _kernel_init_support(
@@ -86,6 +92,10 @@ class SupportField:
             support_v,
             support_vid,
         )
+
+    @property
+    def is_active(self):
+        return self._is_active
 
 
 @ti.kernel
@@ -385,3 +395,8 @@ def _func_count_supports_box(
     d_box = gu.ti_inv_transform_by_quat(d, g_quat)
 
     return 2 ** (d_box == 0.0).cast(gs.ti_int).sum()
+
+
+from genesis.utils.deprecated_module_wrapper import create_virtual_deprecated_module
+
+create_virtual_deprecated_module(__name__, "genesis.engine.solvers.rigid.support_field_decomp")

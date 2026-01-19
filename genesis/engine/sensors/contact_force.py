@@ -10,8 +10,8 @@ from genesis.options.sensors import (
     Contact as ContactSensorOptions,
     ContactForce as ContactForceSensorOptions,
 )
-from genesis.utils.geom import ti_inv_transform_by_quat, transform_by_quat
-from genesis.utils.misc import concat_with_tensor, make_tensor_field, tensor_to_array
+from genesis.utils.geom import inv_transform_by_quat, ti_inv_transform_by_quat, transform_by_quat
+from genesis.utils.misc import concat_with_tensor, make_tensor_field, tensor_to_array, ti_to_torch
 
 from .base_sensor import (
     NoisySensorMetadataMixin,
@@ -124,12 +124,10 @@ class ContactSensor(Sensor):
     ):
         assert shared_metadata.solver is not None
         all_contacts = shared_metadata.solver.collider.get_contacts(as_tensor=True, to_torch=True)
-        if all_contacts["link_a"].numel() == 0:
-            shared_ground_truth_cache.fill_(False)
-        else:
-            contact_links = torch.cat([all_contacts["link_a"], all_contacts["link_b"]], dim=-1)
-            is_contact = (contact_links.unsqueeze(-2) == shared_metadata.expanded_links_idx.unsqueeze(-1)).any(-1)
-            shared_ground_truth_cache.copy_(is_contact)
+        link_a, link_b = all_contacts["link_a"], all_contacts["link_b"]
+        is_contact_a = (link_a[..., None, :] == shared_metadata.expanded_links_idx[..., None]).any(dim=-1)
+        is_contact_b = (link_b[..., None, :] == shared_metadata.expanded_links_idx[..., None]).any(dim=-1)
+        shared_ground_truth_cache[:] = is_contact_a | is_contact_b
 
     @classmethod
     def _update_shared_cache(
@@ -139,7 +137,7 @@ class ContactSensor(Sensor):
         shared_cache: torch.Tensor,
         buffered_data: "TensorRingBuffer",
     ):
-        buffered_data.append(shared_ground_truth_cache)
+        buffered_data.set(shared_ground_truth_cache)
         cls._apply_delay_to_shared_cache(shared_metadata, shared_cache, buffered_data)
 
     def _draw_debug(self, context: "RasterizerContext", buffer_updates: dict[str, np.ndarray]):
@@ -150,8 +148,8 @@ class ContactSensor(Sensor):
         """
         env_idx = context.rendered_envs_idx[0] if self._manager._sim.n_envs > 0 else None
 
-        pos = self._link.get_pos(envs_idx=env_idx).squeeze(0)
-        is_contact = self.read(envs_idx=env_idx).item()
+        pos = self._link.get_pos(env_idx).reshape((3,))
+        is_contact = self.read(env_idx)
 
         if self.debug_object is not None:
             context.clear_debug_object(self.debug_object)
@@ -174,7 +172,6 @@ class ContactForceSensorMetadata(RigidSensorMetadataMixin, NoisySensorMetadataMi
 
     min_force: torch.Tensor = make_tensor_field((0, 3))
     max_force: torch.Tensor = make_tensor_field((0, 3))
-    output_forces: torch.Tensor = make_tensor_field((0, 0))  # FIXME: remove once we have contiguous cache slices
 
 
 @register_sensor(ContactForceSensorOptions, ContactForceSensorMetadata, tuple)
@@ -215,13 +212,6 @@ class ContactForceSensor(
             self._shared_metadata.max_force, self._options.max_force, expand=(1, 3)
         )
 
-        if self._shared_metadata.output_forces.numel() == 0:
-            self._shared_metadata.output_forces.reshape(self._manager._sim._B, 0)
-        self._shared_metadata.output_forces = concat_with_tensor(
-            self._shared_metadata.output_forces,
-            torch.empty((self._manager._sim._B, 3), dtype=gs.tc_float, device=gs.device),
-        )
-
     def _get_return_format(self) -> tuple[int, ...]:
         return (3,)
 
@@ -234,34 +224,45 @@ class ContactForceSensor(
         cls, shared_metadata: ContactForceSensorMetadata, shared_ground_truth_cache: torch.Tensor
     ):
         assert shared_metadata.solver is not None
+
+        # Note that forcing GPU sync to operate on `slice(0, max(n_contacts))` is usually faster overall
         all_contacts = shared_metadata.solver.collider.get_contacts(as_tensor=True, to_torch=True)
         force, link_a, link_b = all_contacts["force"], all_contacts["link_a"], all_contacts["link_b"]
+        if shared_metadata.solver.n_envs == 0:
+            force, link_a, link_b = force[None], link_a[None], link_b[None]
 
-        if not shared_ground_truth_cache.is_contiguous():
-            shared_metadata.output_forces.fill_(0.0)
-        else:
-            shared_ground_truth_cache.fill_(0.0)
-
+        # Short-circuit if no contacts
         if link_a.shape[-1] == 0:
-            return  # no contacts
+            shared_ground_truth_cache.zero_()
+            return
 
         links_quat = shared_metadata.solver.get_links_quat()
         if shared_metadata.solver.n_envs == 0:
-            force = force.unsqueeze(0)
-            link_a = link_a.unsqueeze(0)
-            link_b = link_b.unsqueeze(0)
-            links_quat = links_quat.unsqueeze(0)
+            links_quat = links_quat[None]
 
+        if gs.use_zerocopy:
+            # Forces are aggregated BEFORE moving them in local frame for efficiency
+            force_mask_a = link_a[:, None] == shared_metadata.links_idx[None, :, None]
+            force_mask_b = link_b[:, None] == shared_metadata.links_idx[None, :, None]
+            force_mask = force_mask_b.to(dtype=gs.tc_float) - force_mask_a.to(dtype=gs.tc_float)
+            sensors_force = (force_mask[..., None] * force[:, None]).sum(dim=2)
+            sensors_quat = links_quat[:, shared_metadata.links_idx]
+            output_forces = shared_ground_truth_cache.reshape((max(shared_metadata.solver.n_envs, 1), -1, 3))
+            output_forces[:] = inv_transform_by_quat(sensors_force, sensors_quat)
+            return
+
+        output_forces = shared_ground_truth_cache.contiguous()
+        output_forces.zero_()
         _kernel_get_contacts_forces(
             force.contiguous(),
             link_a.contiguous(),
             link_b.contiguous(),
             links_quat.contiguous(),
             shared_metadata.links_idx,
-            shared_ground_truth_cache if shared_ground_truth_cache.is_contiguous() else shared_metadata.output_forces,
+            output_forces,
         )
         if not shared_ground_truth_cache.is_contiguous():
-            shared_ground_truth_cache[:] = shared_metadata.output_forces
+            shared_ground_truth_cache.copy_(output_forces)
 
     @classmethod
     def _update_shared_cache(
@@ -271,7 +272,7 @@ class ContactForceSensor(
         shared_cache: torch.Tensor,
         buffered_data: "TensorRingBuffer",
     ):
-        buffered_data.append(shared_ground_truth_cache)
+        buffered_data.set(shared_ground_truth_cache)
         torch.normal(0.0, shared_metadata.jitter_ts, out=shared_metadata.cur_jitter_ts)
         cls._apply_delay_to_shared_cache(
             shared_metadata,
@@ -281,11 +282,11 @@ class ContactForceSensor(
             shared_metadata.interpolate,
         )
         cls._add_noise_drift_bias(shared_metadata, shared_cache)
-        shared_cache_per_sensor = shared_cache.reshape(shared_cache.shape[0], -1, 3)  # B, n_sensors * 3
+        shared_cache_per_sensor = shared_cache.reshape((shared_cache.shape[0], -1, 3))  # B, n_sensors * 3
         # clip for max force
         shared_cache_per_sensor.clamp_(min=-shared_metadata.max_force, max=shared_metadata.max_force)
         # set to 0 for undetectable force
-        shared_cache_per_sensor[torch.abs(shared_cache_per_sensor) < shared_metadata.min_force] = 0.0
+        shared_cache_per_sensor.masked_fill_(torch.abs(shared_cache_per_sensor) < shared_metadata.min_force, 0.0)
         cls._quantize_to_resolution(shared_metadata.resolution, shared_cache)
 
     def _draw_debug(self, context: "RasterizerContext", buffer_updates: dict[str, np.ndarray]):
@@ -294,13 +295,13 @@ class ContactForceSensor(
 
         Only draws for first rendered environment.
         """
-        env_idx = context.rendered_envs_idx[0]
+        env_idx = context.rendered_envs_idx[0] if self._manager._sim.n_envs > 0 else None
 
-        pos = self._link.get_pos(envs_idx=env_idx).squeeze(0)
-        quat = self._link.get_quat(envs_idx=env_idx).squeeze(0)
+        pos = self._link.get_pos(env_idx).reshape((3,))
+        quat = self._link.get_quat(env_idx).reshape((4,))
 
-        force = self.read(envs_idx=env_idx if self._manager._sim.n_envs > 0 else None)
-        vec = tensor_to_array(transform_by_quat(force.squeeze(0) * self._options.debug_scale, quat))
+        force = self.read(env_idx).reshape((3,))
+        vec = tensor_to_array(transform_by_quat(force * self._options.debug_scale, quat))
 
         if self.debug_object is not None:
             context.clear_debug_object(self.debug_object)

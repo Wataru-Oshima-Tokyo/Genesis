@@ -66,7 +66,6 @@ class HybridEntity(Entity):
 
         if isinstance(morph, gs.morphs.URDF):
             # set up rigid part
-            morph.fixed = material.fixed  # NOTE: use hybrid material to determine this
             if material.use_default_coupling:
                 gs.logger.info("Use default coupling in hybrid. Overwrite `needs_coup` in rigid material to True")
                 material_rigid._needs_coup = True
@@ -84,10 +83,9 @@ class HybridEntity(Entity):
             augment_link_world_coords(part_rigid)
 
             # set soft parts based on rigid links
-            if material._func_instantiate_soft_from_rigid is None:
-                func_instantiate_soft_from_rigid = default_func_instantiate_soft_from_rigid
-            else:
-                func_instantiate_soft_from_rigid = material._func_instantiate_soft_from_rigid
+            func_instantiate_soft_from_rigid = (
+                material._func_instantiate_soft_from_rigid or default_func_instantiate_soft_from_rigid
+            )
             part_soft = func_instantiate_soft_from_rigid(
                 scene=scene,
                 part_rigid=part_rigid,
@@ -122,7 +120,7 @@ class HybridEntity(Entity):
             )
 
         else:
-            raise ValueError(f"`morph` in hybrid entity should be either URDF or Mesh")
+            raise ValueError("`morph` in hybrid entity should be either URDF or Mesh")
 
         if not material.use_default_coupling:
             # get rigid-soft association function
@@ -568,9 +566,6 @@ def default_func_instantiate_soft_from_rigid(
         euler = gu.quat_to_xyz(quat, rpy=True, degrees=True)
 
         # can also do link.init_verts here and it seems to have more indices than geom.init_verts (but there is no idx_offset_vert)
-        lower = geom.init_verts.min(axis=0)
-        upper = geom.init_verts.max(axis=0)
-        center = (upper + lower) / 2.0
         verts = geom.init_verts
         assert hasattr(geom, "init_normals")
         inner_mesh = trimesh.Trimesh(
@@ -584,7 +579,7 @@ def default_func_instantiate_soft_from_rigid(
             faces=geom.init_faces,
         )
         # mesh = trimesh.boolean.difference([outer_mesh, inner_mesh]) # wrap around the rigid link
-        mesh = outer_mesh  # HACK to avoid `ValueError: No backends available for boolean operations!`
+        mesh = outer_mesh  # FIXME: hack to avoid `ValueError: No backends available for boolean operations!`
 
         meshes.append(mesh)
         trans_local_to_global.append(trans)
@@ -649,7 +644,7 @@ def default_func_instantiate_rigid_from_soft(
         pos=pos_rigid,
         quat=quat_rigid,
         scale=scale_rigid,
-        fixed=material_hybrid.fixed,
+        fixed=morph.fixed,
     )
     part_rigid = scene.add_entity(
         material=material_rigid,
@@ -717,7 +712,6 @@ def default_func_instantiate_rigid_soft_association_from_soft(
         line_length = np.linalg.norm(line_vec)
 
         positions_proj_on_line_t = (positions - p0) @ line_vec / (line_length**2)
-        positions_proj_on_line = p0 + positions_proj_on_line_t[:, None] * line_vec
 
         dist_to_p0 = np.linalg.norm(positions - p0, axis=-1)
         dist_to_p1 = np.linalg.norm(positions - p1, axis=-1)
@@ -725,7 +719,7 @@ def default_func_instantiate_rigid_soft_association_from_soft(
 
         is_clipped_low = positions_proj_on_line_t < 0.0
         is_clipped_high = positions_proj_on_line_t > 1.0
-        is_valid = not (is_clipped_low or is_clipped_high)
+        is_valid = ~(is_clipped_low | is_clipped_high)
         dist_to_link = dist_to_p0 * is_clipped_low + dist_to_p1 * is_clipped_high + dist_to_line * is_valid
 
         trans, quat = gu.transform_pos_quat_by_trans_quat(

@@ -2,7 +2,6 @@ import os
 import sys
 import subprocess
 from pathlib import Path
-
 import pytest
 
 
@@ -10,30 +9,36 @@ EXAMPLES_DIR = Path(__file__).parents[1] / "examples"
 
 ALLOW_PATTERNS = {
     "*.py",
-    "rigid/**/*.py",
-    "coupling/**/*.py",
     "collision/**/*.py",
-    "sap_coupling/**/*.py",
-    "sensors/**/*.py",
-    "tutorial/**/*.py",
+    "coupling/**/*.py",
     "drone/interactive_drone.py",
     "drone/fly_route.py",
+    # "IPC_Solver/**/*.py",  # TODO: wait for IPC's wheel to be released
+    "rigid/**/*.py",
+    "render_async/**/*.py",
+    "sap_coupling/**/*.py",
+    "sensors/**/*.py",
+    "tutorials/**/*.py",
+    "usd/**/*.py",
 }
 IGNORE_SCRIPT_NAMES = {
     "ddp_multi_gpu.py",
-    "differentiable_push.py",
     "multi_gpu.py",
-    "fem_cube_linked_with_arm.py",  # FIXME: segfault on exit
     "single_franka_batch_render.py",  # FIXME: segfault on exit
-    "cut_dragon.py",  # FIXME: Only supported on Linux
-    "ipc_arm_cloth.py",  # TODO: wait for IPC's wheel to be released
-    "ipc_cloth.py",  # TODO: wait for IPC's wheel to be released
-    "ipc_grasp.py",  # TODO: wait for IPC's wheel to be released
-    "ipc_twist_cloth_band.py",  # TODO: wait for IPC's wheel to be released
-    "genesis_ipc_motion_test.py",  # TODO: wait for IPC's wheel to be released
+    "fem_cube_linked_with_arm.py",  # FIXME: segfault on exit (corrupted double-linked list)
+}
+if sys.platform != "linux":
+    IGNORE_SCRIPT_NAMES |= {
+        "cut_dragon.py",
+    }
+
+# Map example scripts to their required optional dependencies
+# Empty list means no optional dependencies required
+EXAMPLE_DEPENDENCIES = {
+    "import_stage.py": ["pxr"],  # Requires usd-core package (provides pxr module)
 }
 
-TIMEOUT = 450.0
+TIMEOUT = 600
 
 
 pytestmark = [
@@ -58,6 +63,12 @@ def _discover_examples():
 @pytest.mark.parametrize("backend", [None])  # Disable genesis initialization at worker level
 @pytest.mark.parametrize("file", _discover_examples(), ids=lambda p: p.relative_to(EXAMPLES_DIR).as_posix())
 def test_example(file: Path):
+    # Check for required optional dependencies
+    script_name = file.name
+    module_deps = EXAMPLE_DEPENDENCIES.get(script_name, [])
+    for module_name in module_deps:
+        pytest.importorskip(module_name, reason=f"Python module '{module_name}' not installed.")
+
     # Disable keyboard control and monitoring when running the unit tests
     env = os.environ.copy()
     env["PYNPUT_BACKEND"] = "dummy"

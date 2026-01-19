@@ -41,6 +41,7 @@ class Viewer(RBC):
         self._camera_up = np.asarray(options.camera_up, dtype=gs.np_float)
         self._camera_fov = options.camera_fov
         self._enable_interaction = options.enable_interaction
+        self._disable_keyboard_shortcuts = options.disable_keyboard_shortcuts
 
         # Validate viewer options
         if any(e.shape != (3,) for e in (self._camera_init_pos, self._camera_init_lookat, self._camera_up)):
@@ -100,6 +101,7 @@ class Viewer(RBC):
                         plane_reflection=self.context.plane_reflection,
                         env_separate_rigid=self.context.env_separate_rigid,
                         enable_interaction=self._enable_interaction,
+                        disable_keyboard_shortcuts=self._disable_keyboard_shortcuts,
                         viewer_flags={
                             "window_title": f"Genesis {gs.__version__}",
                             "refresh_rate": self._refresh_rate,
@@ -129,6 +131,10 @@ class Viewer(RBC):
 
         gs.logger.info(f"Viewer created. Resolution: ~<{self._res[0]}×{self._res[1]}>~, max_FPS: ~<{self._max_FPS}>~.")
 
+        glinfo = self._pyrender_viewer.context.get_info()
+        renderer = glinfo.get_renderer()
+        gs.logger.debug(f"Using interactive viewer OpenGL device: {renderer}")
+
     def run(self):
         if self._pyrender_viewer is None:
             gs.raise_exception("Viewer must be built successfully before calling this method.")
@@ -144,6 +150,7 @@ class Viewer(RBC):
     def setup_camera(self):
         yfov = self._camera_fov / 180.0 * np.pi
         pose = gu.pos_lookat_up_to_T(self._camera_init_pos, self._camera_init_lookat, self._camera_up)
+        self._camera_up = pose[:3, 1].copy()
         self._camera_node = self.context.add_node(pyrender.PerspectiveCamera(yfov=yfov), pose=pose)
 
     def update(self, auto_refresh=None, force=False):
@@ -195,6 +202,7 @@ class Viewer(RBC):
             up = self._camera_up
 
             pose = gu.pos_lookat_up_to_T(pos, lookat, up)
+            self._camera_up = pose[:3, 1].copy()
         else:
             if np.array(pose).shape != (4, 4):
                 gs.raise_exception("pose should be a 4x4 matrix.")

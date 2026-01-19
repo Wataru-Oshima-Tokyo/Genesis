@@ -3,7 +3,7 @@ import gstaichi as ti
 import genesis as gs
 import genesis.utils.array_class as array_class
 
-import genesis.engine.solvers.rigid.rigid_solver_decomp as rigid_solver
+import genesis.engine.solvers.rigid.rigid_solver as rigid_solver
 
 
 @ti.kernel(fastcache=gs.use_fastcache)
@@ -32,13 +32,15 @@ def kernel_build_efc_AR_b(
             for i_d in range(n_dofs):
                 constraint_state.Mgrad[i_d, i_b] = constraint_state.jac[i_row, i_d, i_b]
 
-            rigid_solver.func_solve_mass_batched(
-                constraint_state.Mgrad,
-                constraint_state.Mgrad,
+            rigid_solver.func_solve_mass_batch(
                 i_b,
+                constraint_state.Mgrad,
+                constraint_state.Mgrad,
+                array_class.PLACEHOLDER,
                 entities_info=entities_info,
                 rigid_global_info=rigid_global_info,
                 static_rigid_sim_config=static_rigid_sim_config,
+                is_backward=False,
             )
 
             # AR[r, c] = J[c, :] * tmp
@@ -107,7 +109,6 @@ def kernel_noslip(
             # Project contact friction (pyramidal 4-edge) with normal fixed
             for i_col in range(n_con):
                 base = const_start + i_col * 4
-                mu = collider_state.contact_data.friction[i_col, i_b]
                 for j2 in ti.static(range(2)):
                     j_efc = base + j2 * 2
                     res = func_residual_constraint_force(
@@ -188,13 +189,15 @@ def kernel_dual_finish(
                     + constraint_state.jac[i_c, i_d, i_b] * constraint_state.efc_force[i_c, i_b]
                 )
 
-        rigid_solver.func_solve_mass_batched(
+        rigid_solver.func_solve_mass_batch(
+            i_b=i_b,
             vec=constraint_state.qfrc_constraint,
             out=constraint_state.qacc,
-            i_b=i_b,
+            out_bw=array_class.PLACEHOLDER,
             entities_info=entities_info,
             rigid_global_info=rigid_global_info,
             static_rigid_sim_config=static_rigid_sim_config,
+            is_backward=False,
         )
 
         for i_d in range(n_dofs):
@@ -266,6 +269,7 @@ def func_cost_change(
 
 @ti.kernel(fastcache=gs.use_fastcache)
 def compute_A_diag(
+    entities_info: array_class.EntitiesInfo,
     rigid_global_info: array_class.RigidGlobalInfo,
     constraint_state: array_class.ConstraintState,
     static_rigid_sim_config: ti.template(),
@@ -280,13 +284,15 @@ def compute_A_diag(
             for i_d in range(n_dofs):
                 constraint_state.Mgrad[i_d, i_b] = constraint_state.jac[i_c, i_d, i_b]
 
-            rigid_solver.func_solve_mass_batched(
-                constraint_state.Mgrad,
-                constraint_state.Mgrad,
+            rigid_solver.func_solve_mass_batch(
                 i_b,
+                constraint_state.Mgrad,
+                constraint_state.Mgrad,
+                array_class.PLACEHOLDER,
                 entities_info=entities_info,
                 rigid_global_info=rigid_global_info,
                 static_rigid_sim_config=static_rigid_sim_config,
+                is_backward=False,
             )
 
             # Ai = Ji * tmp

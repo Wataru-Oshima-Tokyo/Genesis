@@ -1,23 +1,22 @@
+import collections.abc
 import os
 import pickle
 import sys
 import time
 import weakref
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Iterable, Literal
 
 import numpy as np
 import torch
 import gstaichi as ti
-from numpy.typing import ArrayLike
+from gstaichi.lang import impl
 
 import genesis as gs
 import genesis.utils.geom as gu
-from genesis.utils.misc import ALLOCATE_TENSOR_WARNING
 from genesis.engine.force_fields import ForceField
 from genesis.engine.materials.base import Material
 from genesis.engine.states.solvers import SimState
 from genesis.options import (
-    AvatarOptions,
     BaseCouplerOptions,
     LegacyCouplerOptions,
     FEMOptions,
@@ -35,18 +34,18 @@ from genesis.options import (
 from genesis.options.morphs import Morph
 from genesis.options.surfaces import Surface
 from genesis.options.renderers import Rasterizer, RendererOptions
-from genesis.options.sensors import SensorOptions
 from genesis.options.recorders import RecorderOptions
 from genesis.recorders import RecorderManager
 from genesis.repr_base import RBC
 from genesis.utils.tools import FPSTracker
-from genesis.utils.misc import redirect_libc_stderr, tensor_to_array
+from genesis.utils.misc import tensor_to_array, sanitize_index
 from genesis.vis import Visualizer
 from genesis.utils.warnings import warn_once
 
 if TYPE_CHECKING:
     from genesis.engine.entities.base_entity import Entity
     from genesis.recorders import Recorder
+    from genesis.options.sensors import SensorOptions
 
 
 @gs.assert_initialized
@@ -65,8 +64,6 @@ class Scene(RBC):
         The options configuring the tool_solver (``scene.sim.ToolSolver``).
     rigid_options : gs.options.RigidOptions
         The options configuring the rigid_solver (``scene.sim.RigidSolver``).
-    avatar_options : gs.options.AvatarOptions
-        The options configuring the avatar_solver (``scene.sim.AvatarSolver``).
     mpm_options : gs.options.MPMOptions
         The options configuring the mpm_solver (``scene.sim.MPMSolver``).
     sph_options : gs.options.SPHOptions
@@ -95,7 +92,6 @@ class Scene(RBC):
         coupler_options: BaseCouplerOptions | None = None,
         tool_options: ToolOptions | None = None,
         rigid_options: RigidOptions | None = None,
-        avatar_options: AvatarOptions | None = None,
         mpm_options: MPMOptions | None = None,
         sph_options: SPHOptions | None = None,
         fem_options: FEMOptions | None = None,
@@ -116,7 +112,6 @@ class Scene(RBC):
         coupler_options = coupler_options or LegacyCouplerOptions()
         tool_options = tool_options or ToolOptions()
         rigid_options = rigid_options or RigidOptions()
-        avatar_options = avatar_options or AvatarOptions()
         mpm_options = mpm_options or MPMOptions()
         sph_options = sph_options or SPHOptions()
         fem_options = fem_options or FEMOptions()
@@ -137,7 +132,6 @@ class Scene(RBC):
             coupler_options,
             tool_options,
             rigid_options,
-            avatar_options,
             mpm_options,
             sph_options,
             fem_options,
@@ -153,7 +147,6 @@ class Scene(RBC):
         self.coupler_options = coupler_options
         self.tool_options = tool_options
         self.rigid_options = rigid_options
-        self.avatar_options = avatar_options
         self.mpm_options = mpm_options
         self.sph_options = sph_options
         self.fem_options = fem_options
@@ -168,7 +161,6 @@ class Scene(RBC):
         # merge options
         self.tool_options.copy_attributes_from(self.sim_options)
         self.rigid_options.copy_attributes_from(self.sim_options)
-        self.avatar_options.copy_attributes_from(self.sim_options)
         self.mpm_options.copy_attributes_from(self.sim_options)
         self.sph_options.copy_attributes_from(self.sim_options)
         self.fem_options.copy_attributes_from(self.sim_options)
@@ -182,7 +174,6 @@ class Scene(RBC):
             coupler_options=self.coupler_options,
             tool_options=self.tool_options,
             rigid_options=self.rigid_options,
-            avatar_options=self.avatar_options,
             mpm_options=self.mpm_options,
             sph_options=self.sph_options,
             fem_options=self.fem_options,
@@ -223,7 +214,6 @@ class Scene(RBC):
         coupler_options: BaseCouplerOptions,
         tool_options: ToolOptions,
         rigid_options: RigidOptions,
-        avatar_options: AvatarOptions,
         mpm_options: MPMOptions,
         sph_options: SPHOptions,
         fem_options: FEMOptions,
@@ -245,9 +235,6 @@ class Scene(RBC):
 
         if not isinstance(rigid_options, RigidOptions):
             gs.raise_exception("`rigid_options` should be an instance of `RigidOptions`.")
-
-        if not isinstance(avatar_options, AvatarOptions):
-            gs.raise_exception("`avatar_options` should be an instance of `AvatarOptions`.")
 
         if not isinstance(mpm_options, MPMOptions):
             gs.raise_exception("`mpm_options` should be an instance of `MPMOptions`.")
@@ -277,6 +264,18 @@ class Scene(RBC):
             gs.raise_exception("`renderer` should be an instance of `gs.renderers.Renderer`.")
 
         # Validate rigid_options against sim_options
+        if impl.current_cfg().debug:
+            if sim_options.requires_grad and not gs.use_ndarray:
+                gs.raise_exception(
+                    "Genesis debug mode together with performance mode is not supported when gradient computation is "
+                    "enabled, i.e. `sim_options.requires_grad=True`."
+                )
+        else:
+            if sim_options.requires_grad and gs.use_ndarray:
+                gs.logger.info(
+                    "Use GsTaichi dynamic array mode while enabling gradient computation is not recommended. Please "
+                    "enable performance mode at init for efficiency, i.e. 'gs.init(..., performance_mode=True)'."
+                )
         if rigid_options.box_box_detection is None:
             rigid_options.box_box_detection = not sim_options.requires_grad
         elif rigid_options.box_box_detection and sim_options.requires_grad:
@@ -314,7 +313,7 @@ class Scene(RBC):
     @gs.assert_unbuilt
     def add_entity(
         self,
-        morph: Morph,
+        morph: Morph | Iterable[Morph],
         material: Material | None = None,
         surface: Surface | None = None,
         visualize_contact: bool = False,
@@ -325,8 +324,10 @@ class Scene(RBC):
 
         Parameters
         ----------
-        morph : gs.morphs.Morph
-            The morph of the entity.
+        morph : gs.morphs.Morph | list[gs.morphs.Morph]
+            The morph of the entity. If a list of morphs is provided, the entity will be heterogeneous
+            (rigid only, single-link entities only). Each parallel environment will simulate a different
+            geometry variant from the list.
         material : gs.materials.Material | None, optional
             The material of the entity. If None, use ``gs.materials.Rigid()``.
         surface : gs.surfaces.Surface | None, optional
@@ -348,35 +349,48 @@ class Scene(RBC):
             # assign a local surface, otherwise modification will apply on global default surface
             surface = gs.surfaces.Default()
 
+        # Handle heterogeneous morphs (any iterable of morphs, excluding Morph objects)
+        is_heterogeneous = isinstance(morph, collections.abc.Iterable) and not isinstance(morph, Morph)
+        if is_heterogeneous:
+            morph = tuple(morph)
+            morph_for_checks = morph[0]
+            if not isinstance(material, gs.materials.Rigid):
+                gs.raise_exception("Heterogeneous morphs (iterable of morphs) are only supported for Rigid materials.")
+            for m in morph:
+                if not isinstance(m, (gs.morphs.Primitive, gs.morphs.Mesh)):
+                    gs.raise_exception(
+                        f"Heterogeneous morphs only support Primitive and Mesh types, got: {type(m).__name__}."
+                    )
+        else:
+            morph_for_checks = morph
+
         if isinstance(material, gs.materials.Rigid):
             # small sdf res is sufficient for primitives regardless of size
-            if isinstance(morph, gs.morphs.Primitive):
+            if isinstance(morph_for_checks, gs.morphs.Primitive):
                 material._sdf_max_res = 32
 
         # some morph should not smooth surface normal
-        if isinstance(morph, (gs.morphs.Box, gs.morphs.Cylinder, gs.morphs.Terrain)):
+        if isinstance(morph_for_checks, (gs.morphs.Box, gs.morphs.Cylinder, gs.morphs.Terrain)):
             surface.smooth = False
 
-        if isinstance(morph, (gs.morphs.URDF, gs.morphs.MJCF, gs.morphs.Terrain)):
-            if not isinstance(material, (gs.materials.Rigid, gs.materials.Avatar, gs.materials.Hybrid)):
-                gs.raise_exception(f"Unsupported material for morph: {material} and {morph}.")
+        if isinstance(morph_for_checks, (gs.morphs.URDF, gs.morphs.MJCF, gs.morphs.Terrain)):
+            if not isinstance(material, (gs.materials.Rigid, gs.materials.Hybrid)):
+                gs.raise_exception(f"Unsupported material for morph: {material} and {morph_for_checks}.")
 
         if surface.double_sided is None:
-            if isinstance(material, gs.materials.PBD.Cloth):
-                surface.double_sided = True
-            else:
-                surface.double_sided = False
+            surface.double_sided = isinstance(material, gs.materials.PBD.Cloth)
 
         if vis_mode is not None:
             surface.vis_mode = vis_mode
         # validate and populate default surface.vis_mode considering morph type
-        if isinstance(material, (gs.materials.Rigid, gs.materials.Avatar, gs.materials.Tool)):
+        if isinstance(material, (gs.materials.Rigid, gs.materials.Tool)):
             if surface.vis_mode is None:
                 surface.vis_mode = "visual"
 
             if surface.vis_mode not in ("visual", "collision", "sdf"):
                 gs.raise_exception(
-                    f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['visual', 'collision', 'sdf']."
+                    f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: "
+                    "['visual', 'collision', 'sdf']."
                 )
 
         elif isinstance(
@@ -398,11 +412,11 @@ class Scene(RBC):
                     f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['particle', 'recon']."
                 )
 
-        elif isinstance(material, (gs.materials.SF.Smoke)):
+        elif isinstance(material, gs.materials.SF.Smoke):
             if surface.vis_mode is None:
                 surface.vis_mode = "particle"
 
-            if surface.vis_mode not in ["particle"]:
+            if surface.vis_mode not in ("particle",):
                 gs.raise_exception(
                     f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['particle', 'recon']."
                 )
@@ -416,20 +430,20 @@ class Scene(RBC):
                     f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['visual', 'particle', 'recon']."
                 )
 
-        elif isinstance(material, (gs.materials.FEM.Base)):
+        elif isinstance(material, gs.materials.FEM.Base):
             if surface.vis_mode is None:
                 surface.vis_mode = "visual"
 
-            if surface.vis_mode not in ["visual"]:
+            if surface.vis_mode not in ("visual",):
                 gs.raise_exception(
                     f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['visual']."
                 )
 
-        elif isinstance(material, (gs.materials.Hybrid)):  # determine the visual of the outer soft part
+        elif isinstance(material, gs.materials.Hybrid):  # determine the visual of the outer soft part
             if surface.vis_mode is None:
                 surface.vis_mode = "particle"
 
-            if surface.vis_mode not in ["particle", "visual"]:
+            if surface.vis_mode not in ("particle", "visual"):
                 gs.raise_exception(
                     f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['particle', 'visual']."
                 )
@@ -441,61 +455,28 @@ class Scene(RBC):
         if isinstance(morph, gs.morphs.FileMorph):
             # Rigid entities will convexify geom by default
             if morph.convexify is None:
-                morph.convexify = isinstance(material, (gs.materials.Rigid, gs.materials.Avatar))
+                morph.convexify = isinstance(material, gs.materials.Rigid)
 
         entity = self._sim._add_entity(morph, material, surface, visualize_contact)
 
         return entity
 
     @gs.assert_unbuilt
-    def link_entities(
+    def add_stage(
         self,
-        parent_entity: "Entity",
-        child_entity: "Entity",
-        parent_link_name="",
-        child_link_name="",
+        morph: gs.morphs.USD,
+        vis_mode: Literal["visual", "collision"] = "visual",
+        visualize_contact: bool = False,
     ):
-        """
-        links two entities to act as single entity.
+        from genesis.utils.usd import import_from_stage
 
-        Parameters
-        ----------
-        parent_entity : genesis.Entity
-            The entity in the scene that will be a parent of kinematic tree.
-        child_entity : genesis.Entity
-            The entity in the scene that will be a child of kinematic tree.
-        parent_link_name : str
-            The name of the link in the parent entity to be linked.
-        child_link_name : str
-            The name of the link in the child entity to be linked.
-        """
-        if not isinstance(parent_entity, gs.engine.entities.RigidEntity):
-            gs.raise_exception("Currently only rigid entities are supported for merging.")
-        if not isinstance(child_entity, gs.engine.entities.RigidEntity):
-            gs.raise_exception("Currently only rigid entities are supported for merging.")
-
-        if not child_link_name:
-            for link in child_entity._links:
-                if link.parent_idx == -1:
-                    child_link = link
-                    break
-        else:
-            child_link = child_entity.get_link(child_link_name)
-        parent_link = parent_entity.get_link(parent_link_name)
-
-        if child_link._parent_idx != -1:
-            gs.logger.warning(
-                "Child entity already has a parent link. This may cause the entity to break into parts. Make sure "
-                "this operation is intended."
-            )
-        child_link._parent_idx = parent_link.idx
-        parent_link._child_idxs.append(child_link.idx)
+        return import_from_stage(self, morph.file, vis_mode, morph, visualize_contact)
 
     @gs.assert_unbuilt
     def add_mesh_light(
         self,
         morph: Morph | None = None,
-        color: ArrayLike | None = (1.0, 1.0, 1.0, 1.0),
+        color: "np.typing.ArrayLike | None" = (1.0, 1.0, 1.0, 1.0),
         intensity: float = 20.0,
         revert_dir: bool | None = False,
         double_sided: bool | None = False,
@@ -532,9 +513,9 @@ class Scene(RBC):
     @gs.assert_unbuilt
     def add_light(
         self,
-        pos: ArrayLike,
-        dir: ArrayLike,
-        color: ArrayLike = (1.0, 1.0, 1.0),
+        pos: "np.typing.ArrayLike | None",
+        dir: "np.typing.ArrayLike | None",
+        color: "np.typing.ArrayLike | None" = (1.0, 1.0, 1.0),
         intensity: float = 1.0,
         directional: bool = False,
         castshadow: bool = True,
@@ -629,9 +610,12 @@ class Scene(RBC):
         """
         Add a camera to the scene.
 
-        The camera model can be either 'pinhole' or 'thinlens'. The 'pinhole' model is a simple camera model that
-        captures light rays from a single point in space. The 'thinlens' model is a more complex camera model that
-        simulates a lens with a finite aperture size, allowing for depth of field effects.
+        The camera model can be either 'pinhole', 'thinlens' or 'fisheye':
+        - The 'pinhole' model is a simple camera model that captures light rays from a single point in space.
+        - The 'thinlens' model is a more complex camera model that simulates a lens with a finite aperture size,
+          allowing for depth of field effects. It is only supported by the Raytracer.
+        - The 'fisheye' model is a camera model that simulates a fisheye lens, allowing for wide-angle views. It is
+          only supported by the BatchRenderer.
 
         Warning
         -------
@@ -873,10 +857,10 @@ class Scene(RBC):
             - for non-batched env, we only parallelize certain loops that have big loop size
             - for batched env, we parallelize all loops
         - When using cpu, we serialize everything.
-            - Parallelization only provides a boost for n_envs >= num_threads and ti_num_threads > 1.
+            - Parallelization only provides a boost for n_envs >= num_threads.
               It is always disabled by default but can be enforced by setting the env var `GS_PARA_LEVEL=2`.
-            - In order to exploit full cpu power, users are encouraged to launch multiple processes manually and set
-              env var `TI_NUM_THREADS=1`, so that each process uses a single cpu thread.
+            - In order to exploit full cpu power, users are encouraged to launch multiple processes manually, so that
+              each process uses a single cpu thread.
         """
         if gs.backend == gs.cpu:
             para_level = gs.PARA_LEVEL.NEVER
@@ -1380,36 +1364,21 @@ class Scene(RBC):
     # ----------------------------------- utilities --------------------------------------
     # ------------------------------------------------------------------------------------
 
-    def _sanitize_envs_idx(self, envs_idx, *, unsafe=False):
-        # Handling default argument and special cases
+    def _sanitize_envs_idx(
+        self, envs_idx: int | range | slice | tuple[int, ...] | list[int] | torch.Tensor | np.ndarray | None
+    ) -> torch.Tensor:
         if envs_idx is None:
             return self._envs_idx
 
         if self.n_envs == 0:
             gs.raise_exception("`envs_idx` is not supported for non-parallelized scene.")
 
-        if isinstance(envs_idx, slice):
+        if isinstance(envs_idx, (slice, range)):
             return self._envs_idx[envs_idx]
         if isinstance(envs_idx, (int, np.integer)):
             return self._envs_idx[envs_idx : envs_idx + 1]
 
-        # Early return if unsafe
-        if unsafe:
-            return envs_idx
-
-        # Perform a bunch of sanity checks
-        _envs_idx = torch.as_tensor(envs_idx, dtype=gs.tc_int, device=gs.device).contiguous()
-        if _envs_idx is not envs_idx:
-            gs.logger.debug(ALLOCATE_TENSOR_WARNING)
-        _envs_idx = torch.atleast_1d(_envs_idx)
-
-        if _envs_idx.ndim != 1:
-            gs.raise_exception("Expecting a 1D tensor for `envs_idx`.")
-
-        if (_envs_idx < 0).any() or (_envs_idx >= self.n_envs).any():
-            gs.raise_exception("`envs_idx` exceeds valid range.")
-
-        return _envs_idx
+        return sanitize_index(envs_idx, -1, self.n_envs, 0, "envs_idx")
 
     # ------------------------------------------------------------------------------------
     # ----------------------------------- properties -------------------------------------
@@ -1505,11 +1474,6 @@ class Scene(RBC):
     def rigid_solver(self):
         """The scene's `rigid_solver`, managing all the `RigidEntity` in the scene."""
         return self._sim.rigid_solver
-
-    @property
-    def avatar_solver(self):
-        """The scene's `avatar_solver`, managing all the `AvatarEntity` in the scene."""
-        return self._sim.avatar_solver
 
     @property
     def mpm_solver(self):
