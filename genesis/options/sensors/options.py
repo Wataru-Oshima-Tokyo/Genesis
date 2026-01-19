@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import numpy as np
 from pydantic import Field
@@ -12,6 +12,9 @@ Tuple3FType = tuple[float, float, float]
 MaybeTuple3FType = float | Tuple3FType
 Matrix3x3Type = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
 MaybeMatrix3x3Type = Matrix3x3Type | MaybeTuple3FType
+
+if TYPE_CHECKING:
+    from genesis.engine.scene import Scene
 
 
 class SensorOptions(Options):
@@ -56,7 +59,7 @@ class RigidSensorOptionsMixin:
     Parameters
     ----------
     entity_idx : int
-        The global entity index of the RigidEntity to which this sensor is attached.
+        The global entity index of the RigidEntity to which this sensor is attached. -1 or None for static sensors.
     link_idx_local : int, optional
         The local index of the RigidLink of the RigidEntity to which this sensor is attached.
     pos_offset : tuple[float, float, float]
@@ -65,7 +68,7 @@ class RigidSensorOptionsMixin:
         The rotational offset of the sensor from the RigidLink in degrees.
     """
 
-    entity_idx: int
+    entity_idx: int | None = -1
     link_idx_local: int = 0
     pos_offset: Tuple3FType = (0.0, 0.0, 0.0)
     euler_offset: Tuple3FType = (0.0, 0.0, 0.0)
@@ -74,13 +77,14 @@ class RigidSensorOptionsMixin:
         from genesis.engine.entities import RigidEntity
 
         super().validate(scene)
-        if self.entity_idx < 0 or self.entity_idx >= len(scene.entities):
+        if self.entity_idx is not None and self.entity_idx >= len(scene.entities):
             gs.raise_exception(f"Invalid RigidEntity index {self.entity_idx}.")
-        entity = scene.entities[self.entity_idx]
-        if not isinstance(entity, RigidEntity):
-            gs.raise_exception(f"Entity at index {self.entity_idx} is not a RigidEntity.")
-        if self.link_idx_local < 0 or self.link_idx_local >= entity.n_links:
-            gs.raise_exception(f"Invalid RigidLink index {self.link_idx_local} for entity {self.entity_idx}.")
+        if self.entity_idx is not None:
+            entity = scene.entities[self.entity_idx]
+            if not isinstance(entity, RigidEntity):
+                gs.raise_exception(f"Entity at index {self.entity_idx} is not a RigidEntity.")
+            if self.link_idx_local < 0 or self.link_idx_local >= entity.n_links:
+                gs.raise_exception(f"Invalid RigidLink index {self.link_idx_local} for entity {self.entity_idx}.")
 
 
 class NoisySensorOptionsMixin:

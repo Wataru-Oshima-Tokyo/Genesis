@@ -4,17 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genesis-world"
-version = "0.3.7"
+version = "0.3.12"
 description = "A universal and generative physics engine"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
     "psutil",
-    "gstaichi==4.2.0",
+    "gstaichi==4.6.0",
     "pydantic>=2.11.0",
     "numpy>=1.26.4",
     "trimesh",
-    "scipy>=1.14",
     "libigl",
     # Cross-platform library to get various kind of CPU information such as model name
     "py-cpuinfo",
@@ -36,7 +35,7 @@ dependencies = [
     # Used for parsing `.glb` mesh files
     "pygltflib==1.16.0",
     # Use by `PBD3DEntity.sample` to tetrahedralize a mesh
-    "tetgen>=0.6.4; platform_machine!='aarch64'",
+    "tetgen>=0.6.4,<0.7.0; platform_machine!='aarch64'",
     # Used for some advanced mesh processing such as `skeletonization`
     "PyGEL3D",
     # Used to convert VTK output to numpy when converting volume to particles for PBS
@@ -58,14 +57,11 @@ dependencies = [
     # Used for loading raytracing special texture images used by LuisaRender
     "OpenEXR",
     # Native batch renderer specifically designed for Genesis
-    "gs-madrona==0.0.5; platform_system=='Linux' and (platform_machine=='x86_64' or platform_machine=='AMD64')",
+    "gs-madrona==0.0.7.post2; platform_system=='Linux' and (platform_machine=='x86_64' or platform_machine=='AMD64')",
     # Used for mesh simplification
     "fast_simplification>=0.1.12",
-    # Surface reconstruction library for particle data from SPH simulations.
-    # 0.13.0.0 changes removes enable_multi_threading argument an enable it by default
-    # and AttributeError: 'builtins.MeshWithData' object has no attribute 'get_point_attribute'.
-    # Did you mean: 'add_point_attribute'?
-    "pysplashsurf<=0.12.0.2",
+    # Surface reconstruction library for particle data from SPH simulations
+    "pysplashsurf==0.14.*",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +74,7 @@ dev = [
     "pytest-print",
     # - 16.0 is causing pytest-xdist to crash in case of failure or skipped tests
     "pytest-rerunfailures!=16.0",
+    "setproctitle", # allows renaming the test processes on the cluster
     "syrupy",
     "huggingface_hub[hf_xet]",
     "wandb",
@@ -90,6 +87,8 @@ dev = [
     "matplotlib>=3.7.0",
     # Used internally by 'VideoFileWriter'
     "av",
+    # Used for validating polar decomposition in unit tests
+    "scipy",
 ]
 docs = [
     # Note that currently sphinx 7 does not work, so we must use v6.2.1. Once fixed we can use a later version.
@@ -117,6 +116,8 @@ render = [
 usd = [
     # Used for parsing `.usd` mesh files
     "usd-core<25.11",
+    # import stubs to static code analysis
+    "types-usd==24.5.2",
 ]
 
 [project.scripts]
@@ -142,6 +143,21 @@ force-exclude = '''
 )/
 '''
 
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Ignore the specific errors currently present in the codebase
+ignore = [
+    "F405", # undefined-local-with-import-star-usage
+    "F401", # unused-import
+    "F841", # unused-variable
+    "E741", # ambiguous-variable-name
+    "E402", # module-import-not-at-top-of-file
+    "F403", # undefined-local-with-import-star
+    "E712", # true-false-comparison
+]
+
 [tool.pytest.ini_options]
 addopts = [
     "--color=yes",
@@ -164,6 +180,6 @@ markers = [
     "examples: example scripts.",
     "benchmarks: benchmarks for profiling and monitoring.",
     "required: minimal test set that must pass systematically on any environment before merging.",
-    "field_only: tests that are not compatible with gstaichi ndarrays."
+    "slow: tests that are slow to run (> 100s).",
 ]
 log_cli_level = "WARNING"

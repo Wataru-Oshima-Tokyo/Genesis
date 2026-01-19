@@ -55,7 +55,7 @@ def parse_terrain(morph: Terrain, surface):
         try:
             with open(gnd_file_path, "rb") as fd:
                 heightfield = pkl.load(fd)
-        except (EOFError, ModuleNotFoundError, pkl.UnpicklingError):
+        except (EOFError, ModuleNotFoundError, pkl.UnpicklingError, TypeError, MemoryError):
             # Do not ignore error in case of corrupted cache, to make sure the user is aware of it
             gs.raise_exception(f"Corrupted cache for terrain heightmap: {gnd_file_path}")
 
@@ -172,9 +172,7 @@ def parse_terrain(morph: Terrain, surface):
                 # step_width = random.uniform(0.25, 0.3)
                 subterrain = isaacgym_terrain_utils.pyramid_overhang_stairs_terrain(
                     new_subterrain,
-                    step_width=0.45,     # 30 cm の踏面
-                    step_height=0.3,    # 18 cm の蹴上げ
-                    overhang=0.1,       # 4 cm 張り出し
+                    platform_size=1.5,
                 )
             elif subterrain_type == "pyramid_stairs_terrain":
                 step_height = random.randint(15, 22) / 100
@@ -202,6 +200,10 @@ def parse_terrain(morph: Terrain, surface):
                     new_subterrain,
                     step_width= step_width,
                     step_height= step_height,
+                )       
+            elif subterrain_type == "debug_terrain":
+                subterrain = isaacgym_terrain_utils.debug_terrain(
+                    new_subterrain
                 )       
             else:
                 gs.raise_exception(f"Unsupported subterrain type: {subterrain_type}")

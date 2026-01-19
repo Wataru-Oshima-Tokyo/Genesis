@@ -162,7 +162,6 @@ class RasterizerContext:
 
         self.on_tool()
         self.on_rigid()
-        self.on_avatar()
         self.on_mpm()
         self.on_sph()
         self.on_pbd()
@@ -195,6 +194,17 @@ class RasterizerContext:
     def remove_node(self, node):
         with self.scene._visualizer.viewer_lock:
             self._scene.remove_node(node)
+
+    def _get_geom_active_envs_idx(self, geom, rendered_envs_idx):
+        """Get the intersection of geom.active_envs_idx (for heterogeneous sim) and rendered_envs_idx.
+
+        For heterogeneous simulation, each geom is only active in certain environments.
+        This returns the environments where the geom should actually be rendered.
+        """
+        geom_active_envs_idx = geom.active_envs_idx
+        if geom_active_envs_idx is not None:
+            return np.intersect1d(geom_active_envs_idx, rendered_envs_idx)
+        return rendered_envs_idx
 
     def add_rigid_node(self, geom, obj, **kwargs):
         rigid_node = self.add_node(obj, **kwargs)
@@ -379,11 +389,16 @@ class RasterizerContext:
                     geoms_T = self.sim.rigid_solver._geoms_render_T
 
                 for geom in geoms:
+                    # For heterogeneous simulation, filter envs based on geom's assigned environments
+                    geom_envs_idx = self._get_geom_active_envs_idx(geom, self.rendered_envs_idx)
+                    if len(geom_envs_idx) == 0:
+                        continue
+
                     if "sdf" in rigid_entity.surface.vis_mode:
                         mesh = geom.get_sdf_trimesh()
                     else:
                         mesh = geom.get_trimesh()
-                    geom_T = geoms_T[geom.idx][self.rendered_envs_idx]
+                    geom_T = geoms_T[geom.idx][geom_envs_idx]
                     self.add_rigid_node(
                         geom,
                         pyrender.Mesh.from_trimesh(
@@ -411,7 +426,17 @@ class RasterizerContext:
                     geoms_T = self.sim.rigid_solver._geoms_render_T
 
                 for geom in geoms:
-                    geom_T = geoms_T[geom.idx][self.rendered_envs_idx]
+                    # Skip geoms that weren't added - in heterogeneous simulation, some geoms
+                    # may not be rendered in any of the requested environments
+                    if geom.uid not in self.rigid_nodes:
+                        continue
+
+                    # For heterogeneous simulation, filter envs based on geom's assigned environments
+                    geom_envs_idx = self._get_geom_active_envs_idx(geom, self.rendered_envs_idx)
+                    if len(geom_envs_idx) == 0:
+                        continue
+
+                    geom_T = geoms_T[geom.idx][geom_envs_idx]
                     node = self.rigid_nodes[geom.uid]
                     node.mesh._bounds = None
                     node.mesh.primitives[0].poses = geom_T
@@ -461,54 +486,6 @@ class RasterizerContext:
                             color=(0.9, 0.0, 0.8, 1.0),
                             persistent=False,
                         )
-
-    def on_avatar(self):
-        if self.sim.avatar_solver.is_active:
-            # TODO: support dynamic switching in GUI later
-            for avatar_entity in self.sim.avatar_solver.entities:
-                if avatar_entity.surface.vis_mode == "visual":
-                    geoms = avatar_entity.vgeoms
-                    geoms_T = self.sim.avatar_solver._vgeoms_render_T
-                else:
-                    geoms = avatar_entity.geoms
-                    geoms_T = self.sim.avatar_solver._geoms_render_T
-
-                for geom in geoms:
-                    if "sdf" in avatar_entity.surface.vis_mode:
-                        mesh = geom.get_sdf_trimesh()
-                    else:
-                        mesh = geom.get_trimesh()
-                    geom_T = geoms_T[geom.idx]
-                    self.add_rigid_node(
-                        geom,
-                        pyrender.Mesh.from_trimesh(
-                            mesh=mesh,
-                            poses=geom_T,
-                            smooth=geom.surface.smooth if "collision" not in avatar_entity.surface.vis_mode else False,
-                            double_sided=(
-                                geom.surface.double_sided
-                                if "collision" not in avatar_entity.surface.vis_mode
-                                else False
-                            ),
-                        ),
-                    )
-
-    def update_avatar(self, buffer_updates):
-        if self.sim.avatar_solver.is_active:
-            for avatar_entity in self.sim.avatar_solver.entities:
-                if avatar_entity.surface.vis_mode == "visual":
-                    geoms = avatar_entity.vgeoms
-                    geoms_T = self.sim.avatar_solver._vgeoms_render_T
-                else:
-                    geoms = avatar_entity.geoms
-                    geoms_T = self.sim.avatar_solver._geoms_render_T
-
-                for geom in geoms:
-                    geom_T = geoms_T[geom.idx]
-                    node = self._scene.get_buffer_id(self.rigid_nodes[geom.uid], "model")
-                    node.mesh._bounds = None
-                    node.mesh.primitives[0].poses = geom_T
-                    buffer_updates[node] = geom_T.transpose((0, 2, 1))
 
     def on_mpm(self):
         if self.sim.mpm_solver.is_active:
@@ -796,10 +773,6 @@ class RasterizerContext:
 
             for fem_entity in self.sim.fem_solver.entities:
                 if fem_entity.surface.vis_mode == "visual":
-                    triangles = (
-                        triangles_all[fem_entity.s_start : (fem_entity.s_start + fem_entity.n_surfaces)]
-                        - fem_entity.v_start
-                    )
                     for idx in self.rendered_envs_idx:
                         vertices = vertices_all[fem_entity.v_start : fem_entity.v_start + fem_entity.n_vertices, idx]
 
@@ -894,6 +867,58 @@ class RasterizerContext:
             self.add_dynamic_node(None, node)
         return node
 
+    def draw_debug_pyramid(self, T, base_width=0.05, base_height=0.05, height=0.05, color=(1.0, 1.0, 1.0, 0.5)):
+        """
+        Draw a debug pyramid representing a camera frustum.
+        Parameters
+        ----------
+        T: array-like, shape (4, 4), optional
+            The transformation matrix.
+        base_width: float
+            The width of the pyramid base.
+        base_height: float
+            The height of the pyramid base.
+        height: float
+            The height of the pyramid (distance from apex to base).
+        color: RGBA color tuple
+        """
+        T = tensor_to_array(T, dtype=np.float32)
+        right = T[:3, 0]
+        up = T[:3, 1]
+        forward = -T[:3, 2]
+
+        base_center = forward * height
+        half_width = base_width / 2
+        half_height = base_height / 2
+        vertices = np.array(
+            [
+                [0, 0, 0],  # apex
+                base_center + half_width * right + half_height * up,  # top-right
+                base_center - half_width * right + half_height * up,  # top-left
+                base_center - half_width * right - half_height * up,  # bottom-left
+                base_center + half_width * right - half_height * up,  # bottom-right
+            ]
+        )
+        faces = np.array(
+            [
+                # Base (2 triangles) - facing away from apex
+                [1, 2, 3],
+                [1, 3, 4],
+                # Sides (4 triangles from apex to base edges)
+                [0, 2, 1],  # left side
+                [0, 3, 2],  # back side
+                [0, 4, 3],  # right side
+                [0, 1, 4],  # front side
+            ]
+        )
+
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+        mesh.visual.face_colors = np.tile(np.array(color) * 255, (len(faces), 1)).astype(np.uint8)
+
+        node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_pyramid_{gs.UID()}", smooth=False, is_marker=True)
+        self.add_external_node(node)
+        return node
+
     def draw_debug_spheres(self, poss, radius=0.01, color=(1.0, 0.0, 0.0, 0.5), persistent=True):
         mesh = mu.create_sphere(radius=radius, color=color)
         poses = gu.trans_to_T(tensor_to_array(poss))
@@ -974,12 +999,15 @@ class RasterizerContext:
         self.update_tool(self.buffer)
         self.update_rigid(self.buffer)
         self.update_contact(self.buffer)
-        self.update_avatar(self.buffer)
         self.update_mpm(self.buffer)
         self.update_sph(self.buffer)
         self.update_pbd(self.buffer)
         self.update_fem(self.buffer)
         self.update_sensors(self.buffer)
+
+        # Update camera fructum
+        for camera in self.visualizer.cameras:
+            self.update_camera_frustum(camera)
 
     def add_light(self, light):
         # light direction is light pose's -z frame

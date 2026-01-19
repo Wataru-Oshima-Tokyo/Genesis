@@ -1,15 +1,13 @@
 from typing import TYPE_CHECKING
 
-import numpy as np
 import gstaichi as ti
 
 import genesis as gs
-import genesis.utils.geom as gu
 import genesis.utils.array_class as array_class
 
 if TYPE_CHECKING:
-    from genesis.engine.solvers.rigid.collider_decomp import Collider
-    from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
+    from genesis.engine.solvers.rigid.collider import Collider
+    from genesis.engine.solvers.rigid.rigid_solver import RigidSolver
 
 
 @ti.data_oriented
@@ -17,12 +15,6 @@ class ContactIsland:
     def __init__(self, collider: "Collider"):
         self.solver: "RigidSolver" = collider._solver
         self.collider: "Collider" = collider
-
-        struct_agg_list = ti.types.struct(
-            curr=gs.ti_int,
-            n=gs.ti_int,
-            start=gs.ti_int,
-        )
 
         self.contact_island_state = array_class.get_contact_island_state(self.solver, collider)
 

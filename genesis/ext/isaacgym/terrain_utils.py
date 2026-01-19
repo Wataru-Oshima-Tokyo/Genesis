@@ -5,12 +5,12 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-
 import numpy as np
-from scipy import interpolate
+
 import genesis as gs
 import random
 # from scipy.interpolate import RegularGridInterpolator
+import genesis.utils.geom as gu
 
 
 def fractal_terrain(terrain, levels=8, scale=1.0):
@@ -19,7 +19,7 @@ def fractal_terrain(terrain, levels=8, scale=1.0):
 
     Parameters
         terrain (SubTerrain): the terrain
-        levels (int, optional): granurarity of the fractal terrain. Defaults to 8.
+        levels (int, optional): granularity of the fractal terrain. Defaults to 8.
         scale (float, optional): scales vertical variation. Defaults to 1.0.
     """
     width = terrain.width
@@ -82,11 +82,11 @@ def random_uniform_terrain(
     x = np.linspace(0, scaled_width, height_field_downsampled.shape[0])
     y = np.linspace(0, scaled_length, height_field_downsampled.shape[1])
 
-    f = interpolate.RectBivariateSpline(x, y, height_field_downsampled)
-
     x_upsampled = np.linspace(0, scaled_width, terrain.width)
     y_upsampled = np.linspace(0, scaled_length, terrain.length)
-    z_upsampled = np.rint(f(x_upsampled, y_upsampled))
+    z_upsampled = np.rint(
+        gu.cubic_spline_1d(x, gu.cubic_spline_1d(y, height_field_downsampled.T, y_upsampled).T, x_upsampled)
+    )
 
     terrain.height_field_raw += z_upsampled
     return terrain
@@ -553,72 +553,86 @@ def blocky_terrain(
 
 
 def debug_terrain(terrain):
-    slope=-0.5 
-    platform_size_m=0.5 
-    pit_size_m=0.2
-    pit_gap_m=0.4
-    pit_depth_m=0.3
     """
-    Generate a sloped terrain with uniformly spaced pit holes and a flat platform in the center.
-
-    Parameters:
-        terrain: terrain object with attributes width, length, height_field_raw, horizontal_scale, vertical_scale
-        slope (float): slope direction and magnitude
-        platform_size_m (float): size of the center flat platform [meters]
-        pit_size_m (float): width/length of each square pit [meters]
-        pit_gap_m (float): spacing between pit centers [meters]
-        pit_depth_m (float): depth of each pit [meters]
-    Returns:
-        terrain: modified terrain
+    穴を増やした決め打ち地形（heightfield）:
+      - 全体フラット
+      - 30cm x 30cm x 10cm の穴を4つ（上下左右）
+      - 中央は安全地帯として空ける
+      - 外周にも余白を取る
     """
+    hs = terrain.horizontal_scale
+    vs = terrain.vertical_scale
 
-    width, length = terrain.width, terrain.length
-    center_x = width // 2
-    center_y = length // 2
+    W, L = terrain.width, terrain.length
+    cx, cy = W // 2, L // 2
 
-    # Convert dimensions to terrain units
-    platform_size = int(platform_size_m / terrain.horizontal_scale)
-    pit_size = int(pit_size_m / terrain.horizontal_scale)
-    pit_gap = int(pit_gap_m / terrain.horizontal_scale)
-    pit_half = pit_size // 2
-    pit_depth = int(pit_depth_m / terrain.vertical_scale)
+    # ---- 決め打ち（メートル） ----
+    hole_size_m = 0.80      # 30cm 四方
+    hole_depth_m = 0.10     # 10cm 深さ（下げ）
+    center_keepout_m = 1.00 # 中央の空ける領域（1m四方）
+    border_margin_m = 0.60  # 外周から離す距離（60cm）
+    offset_m = 1.50         # 中央から穴中心までの距離（上下左右）
 
-    # Generate pyramid slope
-    x = np.arange(0, terrain.width)
-    y = np.arange(0, terrain.length)
-    xx, yy = np.meshgrid(x, y, sparse=True)
-    xx = (center_x - np.abs(center_x - xx)) / center_x
-    yy = (center_y - np.abs(center_y - yy)) / center_y
-    xx = xx.reshape(terrain.width, 1)
-    yy = yy.reshape(1, terrain.length)
-    max_height = int(slope * (terrain.horizontal_scale / terrain.vertical_scale) * (terrain.width / 2))
-    terrain.height_field_raw[:, :] = (max_height * xx * yy).astype(terrain.height_field_raw.dtype)
+    # ---- クリア ----
+    terrain.height_field_raw[:, :] = 0
 
-    # Flatten the center platform
-    half_platform = platform_size // 2
-    px1 = center_x - half_platform
-    px2 = center_x + half_platform
-    py1 = center_y - half_platform
-    py2 = center_y + half_platform
-    center_height = terrain.height_field_raw[center_x, center_y]
-    terrain.height_field_raw[px1:px2, py1:py2] = center_height
+    # ---- セル換算 ----
+    hole = max(1, int(hole_size_m / hs))
+    half_hole = hole // 2
+    drop = -int(hole_depth_m / vs)
 
-    # Uniform pit placement
-    k = 0
-    for i in range(pit_gap // 2, width, pit_gap):
-        for j in range(pit_gap // 2, length, pit_gap):
-            if (px1 - pit_half <= i <= px2 + pit_half and
-                py1 - pit_half <= j <= py2 + pit_half):
-                continue  # skip the center platform area
+    keep = max(1, int(center_keepout_m / hs))
+    half_keep = keep // 2
 
-            x1 = max(i - pit_half, 0)
-            x2 = min(i + pit_half, width)
-            y1 = max(j - pit_half, 0)
-            y2 = min(j + pit_half, length)
-            if k%2 == 0:
-                terrain.height_field_raw[x1:x2, y1:y2] -= pit_depth
-            k+=1
+    border = max(0, int(border_margin_m / hs))
+    offset = max(hole, int(offset_m / hs))  # 穴同士/中央と近すぎないように最低hole以上
+
+    # ---- 穴を掘るヘルパ ----
+    def carve_hole(ix, iy):
+        x1 = max(border, ix - half_hole)
+        x2 = min(W - border, ix + half_hole)
+        y1 = max(border, iy - half_hole)
+        y2 = min(L - border, iy + half_hole)
+        if x2 > x1 and y2 > y1:
+            terrain.height_field_raw[x1:x2, y1:y2] = drop
+
+    # ---- 中央の安全地帯（念のため明示）----
+    kx1 = max(0, cx - half_keep)
+    kx2 = min(W, cx + half_keep)
+    ky1 = max(0, cy - half_keep)
+    ky2 = min(L, cy + half_keep)
+    terrain.height_field_raw[kx1:kx2, ky1:ky2] = 0
+
+    # ---- 上下左右に穴（中心から十分離す）----
+    candidates = [
+        (cx + offset, cy),  # +x
+        (cx - offset, cy),  # -x
+        (cx, cy + offset),  # +y
+        (cx, cy - offset),  # -y
+    ]
+
+    # keepout を侵さないように（万一）
+    for ix, iy in candidates:
+        if (abs(ix - cx) < (half_keep + half_hole + 1)) and (abs(iy - cy) < (half_keep + half_hole + 1)):
+            continue
+        carve_hole(ix, iy)
+
     return terrain
+
+def pyramid_overhang_stairs_terrain(terrain, platform_size=1.5):
+    """
+    決め打ち pyramid stairs:
+      - 踏面 step_width = 0.30m
+      - 蹴上 step_height = 0.15m
+    """
+    step_width_m = 0.30
+    step_height_m = 0.15
+    return pyramid_stairs_terrain(
+        terrain,
+        step_width=step_width_m,
+        step_height=step_height_m,
+        platform_size=platform_size,
+    )
 
 def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
     """
@@ -650,7 +664,6 @@ def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_
     yy, xx = np.meshgrid(y, x)
 
     if slope_threshold is not None:
-
         slope_threshold *= horizontal_scale / vertical_scale
         move_x = np.zeros((num_rows, num_cols))
         move_y = np.zeros((num_rows, num_cols))

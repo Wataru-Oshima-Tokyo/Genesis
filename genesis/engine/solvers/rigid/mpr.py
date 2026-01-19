@@ -1,16 +1,16 @@
-import numpy as np
 import gstaichi as ti
-import torch
 
 import genesis as gs
 import genesis.utils.geom as gu
 import genesis.utils.array_class as array_class
-import genesis.engine.solvers.rigid.support_field_decomp as support_field
+import genesis.engine.solvers.rigid.support_field as support_field
 
 
 class MPR:
-    def __init__(self, rigid_solver):
+    def __init__(self, rigid_solver, is_active: bool = True):
         self._solver = rigid_solver
+        self._is_active = is_active
+
         self._mpr_info = array_class.get_mpr_info(
             # It has been observed in practice that increasing this threshold makes collision detection instable,
             # which is surprising since 1e-9 is above single precision (which has only 7 digits of precision).
@@ -18,13 +18,14 @@ class MPR:
             CCD_TOLERANCE=1e-6,
             CCD_ITERATIONS=50,
         )
-        self.init_state()
-
-    def init_state(self):
         self._mpr_state = array_class.get_mpr_state(self._solver._B)
 
     def reset(self):
         pass
+
+    @property
+    def is_active(self):
+        return self._is_active
 
 
 @ti.kernel
@@ -90,7 +91,6 @@ def mpr_point_tri_depth(mpr_info: array_class.MPRInfo, P, x0, B, C):
     d1 = B - x0
     d2 = C - x0
     a = x0 - P
-    u = a.dot(a)
     v = d1.dot(d1)
     w = d2.dot(d2)
     p = a.dot(d1)
@@ -822,3 +822,8 @@ def func_mpr_contact(
         center_a=center_a,
         center_b=center_b,
     )
+
+
+from genesis.utils.deprecated_module_wrapper import create_virtual_deprecated_module
+
+create_virtual_deprecated_module(__name__, "genesis.engine.solvers.rigid.mpr_decomp")

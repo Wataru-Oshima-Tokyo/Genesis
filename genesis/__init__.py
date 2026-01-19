@@ -5,6 +5,7 @@ import atexit
 import logging as _logging
 import traceback
 import weakref
+from warnings import warn
 from contextlib import redirect_stdout
 
 # Import gstaichi while collecting its output without printing directly
@@ -28,7 +29,14 @@ from .constants import backend as gs_backend
 from .logging import Logger
 from .version import __version__
 from .utils import redirect_libc_stderr, set_random_seed, get_platform, get_device
-from .utils.misc import ALLOCATE_TENSOR_WARNING
+
+
+_IS_OLD_TORCH = tuple(map(int, torch.__version__.split(".")[:2])) < (2, 8)
+# FIXME: ti.Field does not support zero-copy on Metal for 'torch<=2.9.1'.
+# See: https://github.com/pytorch/pytorch/pull/168193
+_TORCH_MPS_SUPPORT_DLPACK_FIELD = tuple(map(int, torch.__version__.replace("+", ".").split(".")[:3])) > (2, 9, 1)
+if _IS_OLD_TORCH:
+    warn("'torch<2.8.0' is not supported. Please upgrade pytorch manually: https://pytorch.org/get-started/locally/")
 
 
 # Global state
@@ -41,6 +49,7 @@ device: torch.device | None = None
 backend: gs_backend | None = None
 use_ndarray: bool | None = None
 use_fastcache: bool | None = None
+use_zerocopy: bool | None = None
 EPS: float | None = None
 
 
@@ -99,12 +108,9 @@ def init(
     wave_width = max(0, min(38, wave_width))
     bar_width = wave_width * 2 + 9
     wave = ("┈┉" * wave_width)[:wave_width]
-    logger.info(f"~<╭{'─'*(bar_width)}╮>~")
+    logger.info(f"~<╭{'─' * (bar_width)}╮>~")
     logger.info(f"~<│{wave}>~ ~~~~<Genesis>~~~~ ~<{wave}│>~")
-    logger.info(f"~<╰{'─'*(bar_width)}╯>~")
-
-    # FIXME: Disable this warning for now, because it is not useful without printing the entire traceback
-    logger.addFilter(lambda record: record.msg != ALLOCATE_TENSOR_WARNING)
+    logger.info(f"~<╰{'─' * (bar_width)}╯>~")
 
     # Get concrete device and backend
     global device
@@ -112,21 +118,25 @@ def init(
     if backend != gs.cpu and os.environ.get("GS_TORCH_FORCE_CPU_DEVICE") == "1":
         device, device_name, total_mem, _ = get_device(gs_backend.cpu)
 
-    # It is necessary to disable Metal backend manually because it is not working at taichi-level due to a bug
-    if backend == gs_backend.metal and os.environ.get("TI_ENABLE_METAL") == "0":
-        backend = gs_backend.cpu
+    # Deal with manually disabled backend early on to make sure backend-specific logic is valid
+    if (
+        (backend == gs_backend.metal and os.environ.get("TI_ENABLE_METAL") == "0")
+        or (backend == gs_backend.vulkan and os.environ.get("TI_ENABLE_VULKAN") == "0")
+        or (backend == gs_backend.cuda and os.environ.get("TI_ENABLE_CUDA") == "0")
+    ):
+        device, device_name, total_mem, backend = get_device(gs_backend.cpu)
 
     # Configure GsTaichi fast cache and array type
-    global use_ndarray, use_fastcache
-    is_ndarray_disabled = (os.environ.get("GS_ENABLE_NDARRAY") or ("0" if sys.platform == "darwin" else "1")) == "0"
+    global use_ndarray, use_fastcache, use_zerocopy
+    is_ndarray_disabled = (os.environ.get("GS_ENABLE_NDARRAY") or ("0" if backend == gs_backend.metal else "1")) == "0"
     if use_ndarray is None:
         _use_ndarray = not (is_ndarray_disabled or performance_mode)
     else:
         _use_ndarray = use_ndarray
         if _use_ndarray and is_ndarray_disabled:
-            raise_exception("Genesis previous initialized. GsTaichi dynamic array type cannot be disabled anymore.")
+            raise_exception("Genesis previous initialized. GsTaichi dynamic array mode cannot be disabled anymore.")
     if _use_ndarray and backend == gs_backend.metal:
-        raise_exception("GsTaichi dynamic array type is not supported on Apple Metal GPU backend.")
+        raise_exception("GsTaichi dynamic array mode is not supported on Apple Metal GPU backend.")
     is_fastcache_disabled = os.environ.get("GS_ENABLE_FASTCACHE", "1") == "0"
     if use_fastcache is None:
         _use_fastcache = not is_fastcache_disabled and _use_ndarray
@@ -135,6 +145,31 @@ def init(
         if use_fastcache and is_fastcache_disabled:
             raise_exception("Genesis previous initialized. GsTaichi fast cache mode cannot be disabled anymore.")
     use_ndarray, use_fastcache = _use_ndarray, _use_fastcache
+
+    # Unlike dynamic vs static array mode, and fastcache, zero-copy can be toggle on/off between init without issue
+    _use_zerocopy = bool(int(os.environ["GS_ENABLE_ZEROCOPY"])) if "GS_ENABLE_ZEROCOPY" in os.environ else None
+    if _use_zerocopy:
+        if backend == gs_backend.metal and not _use_ndarray and not _TORCH_MPS_SUPPORT_DLPACK_FIELD:
+            raise_exception("Zero-copy not supported for static array mode on Apple Metal if 'torch<=2.9.1'.")
+        if (backend == gs_backend.metal and device.type != "mps") or (
+            backend == gs_backend.cuda and device.type != "cuda"
+        ):
+            raise_exception(
+                f"Genesis backend '{backend}' not consistent with Torch device type '{device.type}'. Zero-copy "
+                "not supported."
+            )
+    supported_arch = [gs_backend.cpu]
+    if backend == gs_backend.cuda and device.type == "cuda":
+        supported_arch.append(gs_backend.cuda)
+    if backend == gs_backend.metal and device.type == "mps" and (_use_ndarray or _TORCH_MPS_SUPPORT_DLPACK_FIELD):
+        supported_arch.append(gs_backend.metal)
+    if backend in supported_arch:
+        if _use_zerocopy is None:
+            _use_zerocopy = True
+    else:
+        if _use_zerocopy:
+            raise_exception(f"Zero-copy not supported on {backend} backend.")
+    use_zerocopy = bool(_use_zerocopy)
 
     # Define the right dtypes in accordance with selected backend and precision
     global ti_float, np_float, tc_float
@@ -156,9 +191,9 @@ def init(
     tc_int = torch.int32
 
     # Bool
-    # Note that `ti.u1` is broken on Apple Metal and output garbage.
+    # Note that `ti.u1` is broken on Apple Metal and Vulkan.
     global ti_bool, np_bool, tc_bool
-    if backend == gs_backend.metal:
+    if backend in (gs_backend.metal, gs_backend.vulkan):
         ti_bool = ti.i32
         np_bool = np.int32
         tc_bool = torch.int32
@@ -210,11 +245,17 @@ def init(
         torch.backends.cudnn.benchmark = False
         logger.info("Beware running Genesis in debug mode dramatically reduces runtime speed.")
 
-    ti_num_cpu_threads = 1 if debug else os.environ.get("TI_NUM_THREADS")
+    # FIXME: Enforcing Taichi num threads to 1 by default when running on CPU
+    # because it significantly improve performance.
+    ti_num_cpu_threads = os.environ.get("TI_NUM_THREADS")
     if ti_num_cpu_threads is not None:
         taichi_kwargs.update(
             cpu_max_num_threads=int(ti_num_cpu_threads),
             num_compile_threads=int(ti_num_cpu_threads),
+        )
+    else:
+        taichi_kwargs.update(
+            cpu_max_num_threads=1,
         )
 
     if seed is not None:
@@ -234,15 +275,16 @@ def init(
             debug=ti_debug and backend == gs_backend.cpu,
             check_out_of_bound=debug and backend != gs_backend.metal,
             # force_scalarize_matrix=True for speeding up kernel compilation
-            # Turning off 'force_scalarize_matrix' is causing numerical instabilities ('nan') on MacOS
+            # FIXME: Turning off 'force_scalarize_matrix' is causing numerical instabilities ('nan') on MacOS
             force_scalarize_matrix=True,
-            # Turning off 'advanced_optimization' is causing issues on MacOS
+            # FIXME: Turning off 'advanced_optimization' is causing issues on MacOS
             advanced_optimization=True,
             # This improves runtime speed by around 1%-5%, while it makes compilation up to 6x slower
             cfg_optimization=False,
             fast_math=not debug,
             default_ip=ti_int,
             default_fp=ti_float,
+            unrolling_limit=100,  # This threshold needs to be increased to accommodate gradient computation
             **taichi_kwargs,
         )
 
@@ -283,6 +325,16 @@ def init(
     if backend == gs_backend.metal:
         logger.debug("[GsTaichi] Beware Apple Metal backend may be unstable.")
 
+    if _IS_OLD_TORCH:
+        logger.warning(
+            "'torch<2.8.0' is not supported. Please upgrade pytorch manually: https://pytorch.org/get-started/locally/"
+        )
+    elif gs.backend == gs.metal and not _TORCH_MPS_SUPPORT_DLPACK_FIELD:
+        logger.warning(
+            "'torch<2.9.1' does not supported zero-copy on Apple Metal. Consider upgrading pytorch to improve "
+            "runtime performance: https://pytorch.org/get-started/locally/"
+        )
+
     msg_options = ", ".join(
         f"{name}: ~~<{val}>~~"
         for name, val in (
@@ -297,6 +349,12 @@ def init(
     )
     logger.info(f"🚀 Genesis initialized. {msg_options}")
 
+    if _use_zerocopy is None:
+        logger.warning(
+            "Zero-copy mode not enabled because Genesis backend is supported or Torch device is not consistent with "
+            "it. This will reduce performance."
+        )
+
     atexit.register(destroy)
     _initialized = True
 
@@ -306,7 +364,7 @@ def init(
 
 def destroy():
     """
-    A simple wrapper for ti.reset(). This call releases all gpu memories allocated and destroyes all runtime data, and also forces caching of compiled kernels.
+    A simple wrapper for ti.reset(). This call releases all gpu memories allocated and destroys all runtime data, and also forces caching of compiled kernels.
     gs.init() needs to be called again to reinitialize the system after destroy.
     """
     # Early return if not initialized
@@ -391,7 +449,7 @@ with open(os.devnull, "w") as stderr, redirect_libc_stderr(stderr):
         from pygel3d import graph, hmesh
     except OSError as e:
         # Import may fail because of missing system dependencies (libGLU.so.1).
-        # This is not blocking because it is only an issue for hybrig entities.
+        # This is not blocking because it is only an issue for hybrid entities.
         pass
 
     try:

@@ -305,7 +305,6 @@ class RaycasterSharedMetadata(RigidSensorMetadataMixin, SharedSensorMetadata):
     sensor_cache_offsets: torch.Tensor = make_tensor_field((0,), dtype_factory=lambda: gs.tc_int)
     sensor_point_offsets: torch.Tensor = make_tensor_field((0,), dtype_factory=lambda: gs.tc_int)
     sensor_point_counts: torch.Tensor = make_tensor_field((0,), dtype_factory=lambda: gs.tc_int)
-    output_hits: torch.Tensor = make_tensor_field((0, 0))  # FIXME: remove once we have contiguous cache slices
 
 
 class RaycasterData(NamedTuple):
@@ -316,7 +315,6 @@ class RaycasterData(NamedTuple):
 @register_sensor(RaycasterOptions, RaycasterSharedMetadata, RaycasterData)
 @ti.data_oriented
 class RaycasterSensor(RigidSensorMixin, Sensor):
-
     def __init__(
         self,
         options: RaycasterOptions,
@@ -331,7 +329,7 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
     @classmethod
     def _update_bvh(cls, shared_metadata: RaycasterSharedMetadata):
         """Rebuild BVH from current geometry in the scene."""
-        from genesis.engine.solvers.rigid.rigid_solver_decomp import kernel_update_all_verts
+        from genesis.engine.solvers.rigid.rigid_solver import kernel_update_all_verts
 
         kernel_update_all_verts(
             geoms_info=shared_metadata.solver.geoms_info,
@@ -339,6 +337,7 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
             verts_info=shared_metadata.solver.verts_info,
             free_verts_state=shared_metadata.solver.free_verts_state,
             fixed_verts_state=shared_metadata.solver.fixed_verts_state,
+            static_rigid_sim_config=shared_metadata.solver._static_rigid_sim_config,
         )
 
         kernel_update_aabbs(
@@ -355,9 +354,6 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
 
         # first lidar sensor initialization: build aabb and bvh
         if self._shared_metadata.bvh is None:
-            self._shared_metadata.output_hits = torch.empty(
-                (self._manager._sim._B, 0), device=gs.device, dtype=gs.tc_float
-            )
             self._shared_metadata.sensor_cache_offsets = concat_with_tensor(
                 self._shared_metadata.sensor_cache_offsets, 0
             )
@@ -388,11 +384,6 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
         self._shared_metadata.sensors_ray_start_idx.append(self._shared_metadata.total_n_rays)
 
         # These fields are used to properly index into the big cache tensor in kernel_cast_rays
-        self._shared_metadata.output_hits = concat_with_tensor(
-            self._shared_metadata.output_hits,
-            torch.empty((self._manager._sim._B, self._cache_size), device=gs.device, dtype=gs.tc_float),
-            dim=-1,
-        )
         self._shared_metadata.sensor_cache_offsets = concat_with_tensor(
             self._shared_metadata.sensor_cache_offsets, self._cache_size
         )
@@ -405,9 +396,7 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
         self._shared_metadata.total_n_rays += num_rays
 
         self._shared_metadata.points_to_sensor_idx = concat_with_tensor(
-            self._shared_metadata.points_to_sensor_idx,
-            [self._idx] * num_rays,
-            flatten=True,
+            self._shared_metadata.points_to_sensor_idx, [self._idx] * num_rays, flatten=True
         )
         self._shared_metadata.return_world_frame = concat_with_tensor(
             self._shared_metadata.return_world_frame, self._options.return_world_frame
@@ -439,9 +428,10 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
         links_pos = shared_metadata.solver.get_links_pos(links_idx=shared_metadata.links_idx)
         links_quat = shared_metadata.solver.get_links_quat(links_idx=shared_metadata.links_idx)
         if shared_metadata.solver.n_envs == 0:
-            links_pos = links_pos.unsqueeze(0)
-            links_quat = links_quat.unsqueeze(0)
+            links_pos = links_pos[None]
+            links_quat = links_quat[None]
 
+        output_hits = shared_ground_truth_cache.contiguous()
         kernel_cast_rays(
             fixed_verts_state=shared_metadata.solver.fixed_verts_state,
             free_verts_state=shared_metadata.solver.free_verts_state,
@@ -460,12 +450,10 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
             sensor_cache_offsets=shared_metadata.sensor_cache_offsets,
             sensor_point_offsets=shared_metadata.sensor_point_offsets,
             sensor_point_counts=shared_metadata.sensor_point_counts,
-            output_hits=(
-                shared_ground_truth_cache if shared_ground_truth_cache.is_contiguous() else shared_metadata.output_hits
-            ),
+            output_hits=output_hits,
         )
         if not shared_ground_truth_cache.is_contiguous():
-            shared_ground_truth_cache[:] = shared_metadata.output_hits
+            shared_ground_truth_cache.copy_(output_hits)
 
     @classmethod
     def _update_shared_cache(
@@ -475,7 +463,7 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
         shared_cache: torch.Tensor,
         buffered_data: "TensorRingBuffer",
     ):
-        buffered_data.append(shared_ground_truth_cache)
+        buffered_data.set(shared_ground_truth_cache)
         cls._apply_delay_to_shared_cache(shared_metadata, shared_cache, buffered_data)
 
     def _draw_debug(self, context: "RasterizerContext", buffer_updates: dict[str, np.ndarray]):
@@ -484,12 +472,13 @@ class RaycasterSensor(RigidSensorMixin, Sensor):
 
         Only draws for first rendered environment.
         """
-        env_idx = context.rendered_envs_idx[0]
+        env_idx = context.rendered_envs_idx[0] if self._manager._sim.n_envs > 0 else None
 
-        points = self.read(envs_idx=env_idx if self._manager._sim.n_envs > 0 else None).points.reshape(-1, 3)
+        data = self.read(env_idx)
+        points = data.points.reshape((-1, 3))
 
-        pos = self._link.get_pos(envs_idx=env_idx)
-        quat = self._link.get_quat(envs_idx=env_idx)
+        pos = self._link.get_pos(env_idx).reshape((3,))
+        quat = self._link.get_quat(env_idx).reshape((4,))
 
         ray_starts = transform_by_trans_quat(self.ray_starts, pos, quat)
 

@@ -9,9 +9,9 @@ import genesis as gs
 import genesis.utils.element as eu
 import genesis.utils.array_class as array_class
 import genesis.utils.geom as gu
-from genesis.constants import IntEnum, EQUALITY_TYPE
+from genesis.constants import IntEnum
 from genesis.engine.bvh import AABB, LBVH, FEMSurfaceTetLBVH, RigidTetLBVH
-from genesis.engine.solvers.rigid.rigid_solver_decomp import kernel_update_all_verts
+from genesis.engine.solvers.rigid.rigid_solver import kernel_update_all_verts
 from genesis.options.solvers import SAPCouplerOptions
 from genesis.repr_base import RBC
 
@@ -213,8 +213,7 @@ class SAPCoupler(RBC):
             self._rigid_rigid_contact_type = RigidRigidContactType.NONE
         else:
             gs.raise_exception(
-                f"Invalid rigid-rigid contact type: {options.rigid_rigid_contact_type}. "
-                "Must be one of 'tet' or 'none'."
+                f"Invalid rigid-rigid contact type: {options.rigid_rigid_contact_type}. Must be one of 'tet' or 'none'."
             )
 
         self._rigid_compliant = False
@@ -357,10 +356,10 @@ class SAPCoupler(RBC):
         self.rigid_volume_verts_geom_idx.from_numpy(rigid_volume_verts_geom_idx_np)
         self.rigid_volume_elems_geom_idx = ti.field(gs.ti_int, shape=(self.n_rigid_volume_elems,))
         self.rigid_volume_elems_geom_idx.from_numpy(rigid_volume_elems_geom_idx_np)
-        # FIXME: Convert collision_pair_validity to field here because SAPCouler cannot support ndarray/field switch yet
-        np_collision_pair_validity = self.rigid_solver.collider._collider_info.collision_pair_validity.to_numpy()
-        self.rigid_collision_pair_validity = ti.field(gs.ti_int, shape=np_collision_pair_validity.shape)
-        self.rigid_collision_pair_validity.from_numpy(np_collision_pair_validity)
+        # FIXME: Convert collision_pair_idx to field here because SAPCoupler cannot support ndarray/field switch yet
+        np_collision_pair_idx = self.rigid_solver.collider._collider_info.collision_pair_idx.to_numpy()
+        self.rigid_collision_pair_idx = ti.field(gs.ti_int, shape=np_collision_pair_idx.shape)
+        self.rigid_collision_pair_idx.from_numpy(np_collision_pair_idx)
         self.rigid_pressure_field = ti.field(gs.ti_float, shape=(self.n_rigid_volume_verts,))
         self.rigid_pressure_field.from_numpy(rigid_pressure_field_np)
         self.rigid_pressure_gradient_rest = ti.field(gs.ti_vec3, shape=(self.n_rigid_volume_elems,))
@@ -606,6 +605,7 @@ class SAPCoupler(RBC):
                 verts_info=self.rigid_solver.verts_info,
                 free_verts_state=self.rigid_solver.free_verts_state,
                 fixed_verts_state=self.rigid_solver.fixed_verts_state,
+                static_rigid_sim_config=self.rigid_solver._static_rigid_sim_config,
             )
 
         if self._rigid_compliant:
@@ -854,6 +854,7 @@ class SAPCoupler(RBC):
             norm_thr = self._sap_convergence_atol + self._sap_convergence_rtol * ti.max(
                 self.sap_state[i_b].momentum_norm, self.sap_state[i_b].impulse_norm
             )
+            self.batch_active[i_b] = self.sap_state[i_b].gradient_norm >= norm_thr
 
     @ti.kernel
     def compute_regularization(
@@ -1087,7 +1088,7 @@ class SAPCoupler(RBC):
                 continue
             out[i_b, i_d1] += rigid_global_info.mass_mat[i_d1, i_d0, i_b] * vec[i_b, i_d0]
 
-    # FIXME: This following two rigid solves are duplicated with the one in rigid_solver_decomp.py:func_solve_mass_batched
+    # FIXME: This following two rigid solves are duplicated with the one in rigid_solver.py:func_solve_mass_batched
     # Consider refactoring.
     @ti.func
     def rigid_solve_pcg(
@@ -2269,7 +2270,7 @@ class RigidContactHandler(BaseContactHandler):
         super().__init__(simulator)
         self.rigid_solver = self.sim.rigid_solver
 
-    # FIXME This function is similar to the one in constraint_solver_decomp.py:add_collision_constraints.
+    # FIXME This function is similar to the one in constraint_solver.py:add_collision_constraints.
     # Consider refactoring, using better naming, and removing while.
     @ti.func
     def compute_jacobian(
@@ -3550,7 +3551,6 @@ class RigidFemTriTetContactHandler(RigidFEMContactHandler):
         for i_c in range(result_count):
             i_b = self.contact_candidates[i_c].batch_idx
             i_e = self.contact_candidates[i_c].geom_idx0
-            i_f = self.contact_candidates[i_c].geom_idx1
 
             tri_vertices = ti.Matrix.zero(gs.ti_float, 3, 3)  # 3 vertices of the triangle
             tet_vertices = ti.Matrix.zero(gs.ti_float, 3, 4)  # 4 vertices of tet 0
