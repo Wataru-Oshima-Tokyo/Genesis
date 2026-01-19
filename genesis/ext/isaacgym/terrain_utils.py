@@ -287,6 +287,63 @@ def pyramid_stairs_terrain(terrain, step_width, step_height, platform_size=1.5):
     return terrain
 
 
+def pyramid_overhang_stairs_terrain(
+    terrain,
+    step_width,      # [m] ふみづら奥行き（段ピッチ）
+    step_height,     # [m] 蹴上げ
+    overhang,        # [m] 段鼻の張り出し量
+    platform_size=1.5  # [m] 中央のフラット領域サイズ
+):
+    """
+    中心に向かって四方から登っていく階段。
+    各段はふみづら長さ step_width が一定で、
+    外側に overhang だけ“せり出した”ような形に近づける。
+    """
+    # スケール変換
+    hs = terrain.horizontal_scale
+    vs = terrain.vertical_scale
+
+    step_w = max(1, int(round(step_width / hs)))
+    step_h = max(1, int(round(step_height / vs)))
+    over   = max(0, int(round(overhang / hs)))
+    platform = int(round(platform_size / hs))
+
+    height = 0
+    start_x = 0
+    stop_x  = terrain.width
+    start_y = 0
+    stop_y  = terrain.length
+
+    # 中心に向かって「step_w」ずつすぼめていく（ここは元の関数と同じ）
+    while (stop_x - start_x) > platform and (stop_y - start_y) > platform:
+        start_x += step_w
+        stop_x  -= step_w
+        start_y += step_w
+        stop_y  -= step_w
+        height  += step_h
+
+        # 塗るのは各段の頂面と、そのフチだけ
+        terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = height
+
+        if over > 0:
+            outer_x0 = max(0, start_x - over)
+            outer_x1 = min(terrain.width, stop_x + over)
+            outer_y0 = max(0, start_y - over)
+            outer_y1 = min(terrain.length, stop_y + over)
+
+            # 横方向のフチ
+            terrain.height_field_raw[outer_x0:start_x, outer_y0:outer_y1] = height
+            terrain.height_field_raw[stop_x:outer_x1, outer_y0:outer_y1] = height
+
+            # 縦方向のフチ（内側領域の上部と下部）
+            terrain.height_field_raw[start_x:stop_x, outer_y0:start_y] = height
+            terrain.height_field_raw[start_x:stop_x, stop_y:outer_y1] = height
+
+    return terrain
+
+
+
+
 def stepping_stones_terrain(terrain, stone_size, stone_distance, max_height, platform_size=1.0, depth=-10):
     """
     Generate a stepping stones terrain

@@ -105,11 +105,6 @@ def parse_terrain(morph: Terrain, surface):
                     new_subterrain,
                     slope=params.get("slope", -0.5),
                 )
-            elif subterrain_type == "pyramid_sloped_terrain":
-                subterrain = isaacgym_terrain_utils.pyramid_sloped_terrain(
-                    new_subterrain,
-                    slope=params.get("slope", -0.1),
-                )
             elif subterrain_type == "discrete_obstacles_terrain":
                 subterrain = isaacgym_terrain_utils.discrete_obstacles_terrain(
                     new_subterrain,
@@ -131,12 +126,6 @@ def parse_terrain(morph: Terrain, surface):
                     step_width=params.get("step_width", 0.75),
                     step_height=params.get("step_height", -0.1),
                 )
-            elif subterrain_type == "pyramid_stairs_terrain":
-                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
-                    new_subterrain,
-                    step_width=params.get("step_width", 0.75),
-                    step_height=params.get("step_height", -0.1),
-                )
             elif subterrain_type == "stepping_stones_terrain":
                 subterrain = isaacgym_terrain_utils.stepping_stones_terrain(
                     new_subterrain,
@@ -153,55 +142,62 @@ def parse_terrain(morph: Terrain, surface):
                     patch_size_m=params.get("patch_size_m", 0.4),
                     gap_m=params.get("gap_m", 0.1),
                 )
-            elif subterrain_type == "pyramid_down_sloped_terrain":
-                slope = random.uniform(-0.1, -0.3)
+            elif subterrain_type == "pyramid_sloped_terrain":
+                slope = random.randrange(-5, -0) / 10
+                slope *= random.choice((1.0, -1.0))
                 subterrain = isaacgym_terrain_utils.pyramid_sloped_terrain(
                     new_subterrain,
                     slope=slope,
                 )
-            elif subterrain_type == "pyramid_down_stairs_terrain":
-                step_height = random.uniform(-0.15, -0.2)
-                step_width = random.uniform(0.3, 0.4)
+            elif subterrain_type == "pyramid_steep_stairs_terrain":
+                step_height = random.randint(25, 30) / 100
+                step_width = random.randint(25, 30) / 100
+                step_height *= random.choice((1.0, -1.0))
                 subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
                     new_subterrain,
                     step_width= step_width,
                     step_height= step_height,
                 )
-            elif subterrain_type == "pyramid_steep_down_stairs_terrain":
-                step_height = 0.25 
-                step_width = 0.25
+            elif subterrain_type == "pyramid_steep_stairs_terrain_ssw":
+                step_height = random.randint(25, 30) / 100
+                step_width = random.randint(18, 25) / 100
+                step_height *= random.choice((1.0, -1.0))
                 subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
                     new_subterrain,
                     step_width= step_width,
                     step_height= step_height,
                 )
-            elif subterrain_type == "pyramid_steep_up_stairs_terrain":
-                step_height = 0.3 
-                step_width = 0.25
+            elif subterrain_type == "pyramid_overhang_stairs_terrain":
+                # step_height = random.uniform(0.20, 0.3)
+                # step_width = random.uniform(0.25, 0.3)
+                subterrain = isaacgym_terrain_utils.pyramid_overhang_stairs_terrain(
+                    new_subterrain,
+                    step_width=0.45,     # 30 cm の踏面
+                    step_height=0.3,    # 18 cm の蹴上げ
+                    overhang=0.1,       # 4 cm 張り出し
+                )
+            elif subterrain_type == "pyramid_stairs_terrain":
+                step_height = random.randint(15, 22) / 100
+                step_width = random.randint(25, 40) / 100
+                step_height *= random.choice((1.0, -1.0))
                 subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
                     new_subterrain,
                     step_width= step_width,
                     step_height= step_height,
                 )
-            elif subterrain_type == "pyramid_up_stairs_terrain":
-                step_height = random.uniform(0.15, 0.2)
-                step_width = random.uniform(0.3, 0.4)
+            elif subterrain_type == "pyramid_stairs_terrain_ssw":
+                step_height = random.randint(15, 22) / 100
+                step_width = random.randint(18, 25) / 100
+                step_height *= random.choice((1.0, -1.0))
                 subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
                     new_subterrain,
                     step_width= step_width,
                     step_height= step_height,
                 )
-            elif subterrain_type == "pyramid_shallow_down_stairs_terrain":
-                step_height = random.uniform(-0.05, -0.13)
-                step_width = random.uniform(0.3, 0.4)
-                subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
-                    new_subterrain,
-                    step_width= step_width,
-                    step_height= step_height,
-                )   
-            elif subterrain_type == "pyramid_shallow_up_stairs_terrain":
-                step_height = random.uniform(0.05, 0.13)
-                step_width = random.uniform(0.3, 0.4)
+            elif subterrain_type == "pyramid_shallow_stairs_terrain":
+                step_height = random.randint(5, 15) / 100
+                step_width = random.randint(18, 25) / 100
+                step_height *= random.choice((1.0, -1.0))
                 subterrain = isaacgym_terrain_utils.pyramid_stairs_terrain(
                     new_subterrain,
                     step_width= step_width,
